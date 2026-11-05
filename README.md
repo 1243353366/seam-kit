@@ -146,7 +146,7 @@ bait you cannot prove anyone ate.
 ## Tests
 
 ```sh
-python -m unittest discover -s tests -q     # 16 tests
+python -m unittest discover -s tests -q     # 65 tests
 ```
 
 The forensic tests build frames with a known answer (a quantised patch, a raw patch, a periodic

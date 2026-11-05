@@ -90,8 +90,8 @@ class SizeLimitTests(unittest.TestCase):
     def test_a_record_too_large_to_parse_is_refused_and_counted(self):
         from guard import ingest
 
-        old = ingest.MAX_LINE_CHARS
-        ingest.MAX_LINE_CHARS = 200
+        old = guard.MAX_LINE_CHARS
+        guard.MAX_LINE_CHARS = 200
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 incoming = os.path.join(tmp, "in.jsonl")
@@ -106,4 +106,43 @@ class SizeLimitTests(unittest.TestCase):
                 self.assertEqual(result["rows"], 0)
                 self.assertEqual(result["oversized_lines"], 1)
         finally:
-            ingest.MAX_LINE_CHARS = old
+            guard.MAX_LINE_CHARS = old
+
+
+class SealTests(unittest.TestCase):
+    """Removing a row used to be invisible: a shorter manifest verified as well as a longer one."""
+
+    def _manifest(self, tmp):
+        incoming = os.path.join(tmp, "in.jsonl")
+        with open(incoming, "w", encoding="utf-8") as fh:
+            for i in range(3):
+                fh.write(json.dumps({"title": f"record number {i}", "label": "spam"}) + "\n")
+        manifest = os.path.join(tmp, "m.jsonl")
+        guard.ingest(incoming, os.path.join(tmp, "c.jsonl"), os.path.join(tmp, "q.jsonl"), manifest)
+        return manifest
+
+    def test_deleting_a_row_breaks_verification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self._manifest(tmp)
+            ok, rows, _ = guard.verify(manifest)
+            self.assertTrue(ok)
+            self.assertEqual(rows, 3)
+
+            with open(manifest, encoding="utf-8") as fh:
+                lines = [line for line in fh if line.strip()]
+            with open(manifest, "w", encoding="utf-8") as fh:
+                fh.writelines(lines[:-2] + lines[-1:])  # drop one row, keep the seal
+
+            ok, rows, problems = guard.verify(manifest)
+            self.assertFalse(ok, "a deleted row must not verify")
+            self.assertEqual(rows, 2)
+            self.assertGreater(problems, 0)
+
+    def test_an_oversized_manifest_line_is_refused_not_parsed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = self._manifest(tmp)
+            with open(manifest, "a", encoding="utf-8") as fh:
+                fh.write("x" * (guard.MAX_LINE_CHARS + 10) + "\n")
+            ok, _, problems = guard.verify(manifest)
+            self.assertFalse(ok)
+            self.assertGreaterEqual(problems, 1)

@@ -169,9 +169,15 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
 
     for entry in entries:
         entry["sig"] = sign({k: v for k, v in entry.items() if k != "sig"}, material)
+    # A per-row HMAC proves a row was not edited. It says nothing about a row that was deleted,
+    # because a shorter manifest verifies exactly as well as a longer one. The seal carries the
+    # count and the last signature, so a missing line is a failure instead of a tidy file.
+    seal = {"__seal__": True, "count": len(entries), "head": entries[-1]["sig"] if entries else ""}
+    seal["sig"] = sign({"__seal__": True, "count": seal["count"], "head": seal["head"]}, material)
     with open(manifest_path, "w", encoding="utf-8") as fh:
         for entry in entries:
             fh.write(json.dumps(entry, sort_keys=True) + "\n")
+        fh.write(json.dumps(seal, sort_keys=True) + "\n")
 
     quarantined = sum(1 for s, _ in status.values() if s == "suspect")
     return {
@@ -186,21 +192,40 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
 
 
 def verify(manifest_path: str, material: bytes | None = None) -> tuple[bool, int, int]:
-    material = material or key()  # noqa: F841 - proves the key exists before any work starts
-    bad = total = 0
+    """Check every row's signature and the seal over all of them.
+
+    Returns (ok, rows, problems). ``problems`` counts refusals, not rows: an oversized line, a
+    missing seal, a count that disagrees with the seal and a rewritten last row each add one.
+    """
+    material = material or key()
     with open(manifest_path, encoding="utf-8") as fh:
         lines = [line.strip() for line in fh if line.strip()]
 
+    oversized = sum(1 for line in lines if len(line) > MAX_LINE_CHARS)
+    lines = [line for line in lines if len(line) <= MAX_LINE_CHARS]
+
+    bad = 0
+    parsed: list[dict] = []
     for line in lines:
-        if not line:
-            continue
         entry = json.loads(line)
-        claimed = entry.pop("sig", "")
-        total += 1
-        expected = sign(entry, material)
-        if not hmac.compare_digest(claimed, expected):
+        claimed = entry.get("sig", "")
+        body = {k: v for k, v in entry.items() if k != "sig"}
+        if not hmac.compare_digest(claimed, sign(body, material)):
             bad += 1
-    return bad == 0, total, bad
+        parsed.append(entry)
+
+    seals = [e for e in parsed if e.get("__seal__")]
+    rows = [e for e in parsed if not e.get("__seal__")]
+
+    problems = bad + oversized
+    if len(seals) != 1:
+        problems += 1  # no seal, or more than one, and neither is a manifest we wrote
+    else:
+        if seals[0].get("count") != len(rows):
+            problems += 1
+        if rows and seals[0].get("head") != rows[-1].get("sig"):
+            problems += 1
+    return problems == 0, len(rows), problems
 
 
 def main(argv: list[str] | None = None) -> int:
