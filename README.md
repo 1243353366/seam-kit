@@ -7,15 +7,40 @@ Two tools that look at artifacts instead of claims.
 - **guard** — corpus intake that quarantines with a reason attached and writes an HMAC manifest you
   can check next month.
 
+## Why this exists: Lupin, Part 4
+
+The show's premise is the problem this repository is built around. In Part 4 a hacker impersonates
+Assane and fabricates surveillance footage placing him at crimes he did not commit, while he is
+physically somewhere else, and the footage does the accusing. Netflix's published material
+confirms the techniques at the level of plot: synthetic footage used to incriminate him, drones
+and holograms in the operations, a hacker doing the work. It does not disclose how any of it is
+implemented, and nothing here claims to reconstruct that.
+
+What carried over is the question the plot makes unavoidable. A camera says the man was at the
+museum at 14:07. A custody log says he was in a cell at 14:00. Something has to decide which of
+those wins, and it cannot be "whatever the pixels look like", because the pixels are the thing
+under attack.
+
+Three commitments come straight out of that scenario:
+
+- **No footage is a verdict.** The signals produce a grade, the basis for it, and the limitations
+  that stop it from being more. A confident number with no stated ceiling is the failure mode the
+  plot depends on.
+- **Independent records outrank media.** `lab/adjudicate.py` caps the claim "this event did not
+  happen" at `unknown` no matter how synthetic the footage looks. It rises only when a source that
+  is not the footage contradicts the event. That is the custody log, not a better detector.
+- **The concealment is the evidence.** In the show the operation succeeds by controlling the
+  camera, the record and the clock, not by rendering a perfect face. So `lab/conceal.py` asks what
+  a concealment cannot remove: a sealed count, a recorded time, a container that names its writer.
+
+Case 001 in [docs/case-museum.md](docs/case-museum.md) is that scenario built from synthetic
+parts, so every claim above can be checked by running `make case` rather than taken on trust.
+
 ## The lab (polyglot)
 
-The first complete case, a museum feed with a compromised camera, is in
-[docs/case-museum.md](docs/case-museum.md). Identity assurance, temporal signals and the rest are described in
-[docs/lab-identity.md](docs/lab-identity.md) and [docs/lab-graph.md](docs/lab-graph.md),
-and
-correlation grading and the binary-analysis exercise are described in
-[docs/lab-graph.md](docs/lab-graph.md). What a verdict is allowed to claim, and the held-out
-evaluation that shows it failing, is in [docs/lab-adjudicate.md](docs/lab-adjudicate.md).
+The first complete case is in [docs/case-museum.md](docs/case-museum.md). Modules and their
+method notes are in [docs/lab-identity.md](docs/lab-identity.md),
+[docs/lab-graph.md](docs/lab-graph.md) and [docs/lab-adjudicate.md](docs/lab-adjudicate.md).
 
 `lab/` is Python and measures (signals, correlation, binary analysis). `api/` is TypeScript on Node 24 and stores. `db/`-free: the store is
 SQLite through `node:sqlite`, with an append-only exhibit chain where each link hashes its
@@ -147,7 +172,7 @@ bait you cannot prove anyone ate.
 ## Tests
 
 ```sh
-python -m unittest discover -s tests -q     # 65 tests
+python -m unittest discover -s tests -q     # 72 tests
 ```
 
 The forensic tests build frames with a known answer (a quantised patch, a raw patch, a periodic
