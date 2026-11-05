@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.venv/
+seam-kit.zip
+*.egg-info/
