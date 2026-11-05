@@ -41,6 +41,8 @@ parts, so every claim above can be checked by running `make case` rather than ta
 The first complete case is in [docs/case-museum.md](docs/case-museum.md). Modules and their
 method notes are in [docs/lab-identity.md](docs/lab-identity.md),
 [docs/lab-graph.md](docs/lab-graph.md) and [docs/lab-adjudicate.md](docs/lab-adjudicate.md).
+What an intrusion record has to contain, read off CISA's playbook and Europol's 2025
+paper rather than recalled, is in [docs/intrusion-model.md](docs/intrusion-model.md).
 
 `lab/` is Python and measures (signals, correlation, binary analysis). `api/` is TypeScript on Node 24 and stores. `db/`-free: the store is
 SQLite through `node:sqlite`, with an append-only exhibit chain where each link hashes its
