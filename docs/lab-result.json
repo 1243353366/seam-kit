@@ -1,0 +1,213 @@
+{
+  "n_per_class": 24,
+  "seed": 20261105,
+  "levels": {
+    "clean": {
+      "noise_ratio": {
+        "auc": 1.0,
+        "direction": "lower",
+        "median_fake": -1.7833,
+        "median_authentic": -2.3503,
+        "operating_point": {
+          "threshold": -1.9135,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "seam_edge": {
+        "auc": 0.0,
+        "direction": "higher",
+        "median_fake": 1.65,
+        "median_authentic": 1.9036,
+        "operating_point": {
+          "threshold": 1.5269,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "chroma_step": {
+        "auc": 1.0,
+        "direction": "higher",
+        "median_fake": 8.303,
+        "median_authentic": 2.6633,
+        "operating_point": {
+          "threshold": 7.6514,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "block_grid": {
+        "auc": 0.527,
+        "direction": "higher",
+        "median_fake": 0.5066,
+        "median_authentic": 0.5063,
+        "operating_point": {
+          "threshold": 0.505,
+          "tpr": 0.792,
+          "fpr": 0.625,
+          "j": 0.167
+        }
+      }
+    },
+    "q75": {
+      "noise_ratio": {
+        "auc": 1.0,
+        "direction": "lower",
+        "median_fake": -2.0074,
+        "median_authentic": -2.482,
+        "operating_point": {
+          "threshold": -2.1118,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "seam_edge": {
+        "auc": 0.0,
+        "direction": "higher",
+        "median_fake": 1.6275,
+        "median_authentic": 1.8074,
+        "operating_point": {
+          "threshold": 1.5149,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "chroma_step": {
+        "auc": 0.406,
+        "direction": "higher",
+        "median_fake": 6.3553,
+        "median_authentic": 6.4568,
+        "operating_point": {
+          "threshold": 5.7898,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "block_grid": {
+        "auc": 1.0,
+        "direction": "higher",
+        "median_fake": 0.736,
+        "median_authentic": 0.6848,
+        "operating_point": {
+          "threshold": 0.719,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      }
+    },
+    "q50": {
+      "noise_ratio": {
+        "auc": 1.0,
+        "direction": "lower",
+        "median_fake": -1.8883,
+        "median_authentic": -2.5562,
+        "operating_point": {
+          "threshold": -2.0308,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "seam_edge": {
+        "auc": 0.0,
+        "direction": "higher",
+        "median_fake": 1.7035,
+        "median_authentic": 1.7828,
+        "operating_point": {
+          "threshold": 1.5483,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "chroma_step": {
+        "auc": 0.276,
+        "direction": "higher",
+        "median_fake": 6.0037,
+        "median_authentic": 6.2029,
+        "operating_point": {
+          "threshold": 5.3998,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "block_grid": {
+        "auc": 1.0,
+        "direction": "higher",
+        "median_fake": 0.8279,
+        "median_authentic": 0.7494,
+        "operating_point": {
+          "threshold": 0.8065,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      }
+    },
+    "cctv": {
+      "noise_ratio": {
+        "auc": 1.0,
+        "direction": "lower",
+        "median_fake": -1.7572,
+        "median_authentic": -2.0605,
+        "operating_point": {
+          "threshold": -1.8655,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "seam_edge": {
+        "auc": 1.0,
+        "direction": "higher",
+        "median_fake": 1.4879,
+        "median_authentic": 1.3752,
+        "operating_point": {
+          "threshold": 1.4251,
+          "tpr": 1.0,
+          "fpr": 0.0,
+          "j": 1.0
+        }
+      },
+      "chroma_step": {
+        "auc": 0.068,
+        "direction": "higher",
+        "median_fake": 4.8202,
+        "median_authentic": 5.1656,
+        "operating_point": {
+          "threshold": 4.4863,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      },
+      "block_grid": {
+        "auc": 0.376,
+        "direction": "higher",
+        "median_fake": 0.8161,
+        "median_authentic": 0.8245,
+        "operating_point": {
+          "threshold": 0.7881,
+          "tpr": 1.0,
+          "fpr": 1.0,
+          "j": 0.0
+        }
+      }
+    }
+  },
+  "null_control": {
+    "signal": "noise_ratio",
+    "level": "cctv",
+    "permutations": 200,
+    "mean_auc": 0.498,
+    "p95_auc": 0.653
+  }
+}

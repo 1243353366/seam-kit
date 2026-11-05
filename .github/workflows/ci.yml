@@ -1,9 +1,5 @@
 name: ci
 
-# The kit's whole value is that a number it prints means something. So CI does two things:
-# it runs the suite, and it runs the demo end to end, because the failure mode that matters is
-# a detector that still returns a number after it has stopped being right.
-
 on:
   push:
     branches: [main]
@@ -14,7 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  python:
+    name: lab and guard (python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -26,12 +23,43 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: pip install -r requirements.txt
-      - name: unit tests
-        run: python -m unittest discover -s tests -v
-      - name: the demo runs from a clean checkout
+      - name: install
+        run: pip install -r requirements.txt
+      - name: tests
+        run: python -m unittest discover -s tests -q
+      - name: the experiment runs and writes a report
         run: |
-          python demo/make_samples.py
-          python -m seam score demo/composite.png --json > /tmp/flagged.json
-          python -m seam score demo/untouched.png --json > /tmp/clean.json
-          python tools/assert_demo.py /tmp/flagged.json /tmp/clean.json
+          python -m lab.experiment
+          test -s docs/lab-report.md
+          python tools/assert_lab.py
+
+  api:
+    name: case store (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: tests
+        run: node --test api/test/*.test.ts
+
+  seam:
+    name: end to end (python computes, node stores)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: pip install -r requirements.txt
+      - run: python demo/make_samples.py
+      - run: bash tools/e2e.sh

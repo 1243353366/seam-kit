@@ -7,6 +7,29 @@ Two tools that look at artifacts instead of claims.
 - **guard** — corpus intake that quarantines with a reason attached and writes an HMAC manifest you
   can check next month.
 
+## The lab (polyglot)
+
+`lab/` is Python and measures. `api/` is TypeScript on Node 24 and stores. `db/`-free: the store is
+SQLite through `node:sqlite`, with an append-only exhibit chain where each link hashes its
+predecessor.
+
+```sh
+make test     # python tests, then the case store's tests
+make lab      # the experiment, writing docs/lab-report.md
+make e2e      # python computes, node stores, then the chain is quietly edited and must notice
+make api      # the store on 127.0.0.1:8787
+```
+
+The experiment answers one question and refuses to answer a second. It asks: after both corpora
+pass through the same surveillance pipeline, which signals still separate them? It refuses to
+claim that a signal identifies a deepfake, because on this corpus two of the four are measuring
+the blur the generator applied rather than the manipulation.
+
+Headline result at `cctv` degradation: `noise_ratio` survives, `seam_edge` flips polarity between
+levels so its threshold does not transfer, `chroma_step` collapses, and `block_grid` is a
+compression witness that dies at the harshest level. Full table and method in
+[`docs/lab.md`](docs/lab.md).
+
 ## What this does not do
 
 No poisoned-corpus mode and no steganographic payload. Poisoned rows do not protect a corpus
