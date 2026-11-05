@@ -49,7 +49,7 @@ def face_frame(seed: int = 0, size: int = 256) -> np.ndarray:
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
-def manipulate(img: np.ndarray, seed: int = 1, feather: int = 1) -> np.ndarray:
+def manipulate(img: np.ndarray, seed: int = 1, feather: int = 1, blur: float = 2.2) -> np.ndarray:
     """Replace the face with a different, over-smooth donor and blend the boundary.
 
     The over-smoothing is the honest part: generative output loses sensor noise. The narrow
@@ -59,7 +59,7 @@ def manipulate(img: np.ndarray, seed: int = 1, feather: int = 1) -> np.ndarray:
     out = img.astype(np.float32).copy()
     oval, _ = face_region(size)
     donor = face_frame(seed=seed + 1000, size=size)
-    smooth = np.asarray(Image.fromarray(donor).filter(ImageFilter.GaussianBlur(2.2))).astype(np.float32)
+    smooth = np.asarray(Image.fromarray(donor).filter(ImageFilter.GaussianBlur(blur))) if blur > 0 else donor.astype(np.float32)
 
     weight = oval.astype(np.float32)
     if feather > 0:
