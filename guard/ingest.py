@@ -167,17 +167,7 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
                 "canary": rec["_canary"],
             })
 
-    for entry in entries:
-        entry["sig"] = sign({k: v for k, v in entry.items() if k != "sig"}, material)
-    # A per-row HMAC proves a row was not edited. It says nothing about a row that was deleted,
-    # because a shorter manifest verifies exactly as well as a longer one. The seal carries the
-    # count and the last signature, so a missing line is a failure instead of a tidy file.
-    seal = {"__seal__": True, "count": len(entries), "head": entries[-1]["sig"] if entries else ""}
-    seal["sig"] = sign({"__seal__": True, "count": seal["count"], "head": seal["head"]}, material)
-    with open(manifest_path, "w", encoding="utf-8") as fh:
-        for entry in entries:
-            fh.write(json.dumps(entry, sort_keys=True) + "\n")
-        fh.write(json.dumps(seal, sort_keys=True) + "\n")
+    write_manifest(manifest_path, entries, material)
 
     quarantined = sum(1 for s, _ in status.values() if s == "suspect")
     return {
@@ -189,6 +179,31 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
         "largest_cluster": max((len(c) for c in clusters), default=0),
         "manifest": manifest_path,
     }
+
+
+def write_manifest(manifest_path: str, entries: list[dict], material: bytes | None = None) -> dict:
+    """Sign each row, then seal the row count and the last signature.
+
+    A per-row HMAC proves a row was not edited. It says nothing about a row that was deleted,
+    because a shorter manifest verifies exactly as well as a longer one. The seal is what makes a
+    missing line a failure instead of a tidy file, and it is written here rather than inside
+    `ingest` so any record can be sealed without pretending to be corpus rows.
+    """
+    material = material or key()
+    signed = []
+    for entry in entries:
+        body = {k: v for k, v in entry.items() if k != "sig"}
+        row = dict(body)
+        row["sig"] = sign(body, material)
+        signed.append(row)
+
+    seal = {"__seal__": True, "count": len(signed), "head": signed[-1]["sig"] if signed else ""}
+    seal["sig"] = sign({"__seal__": True, "count": seal["count"], "head": seal["head"]}, material)
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        for row in signed:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+        fh.write(json.dumps(seal, sort_keys=True) + "\n")
+    return {"count": len(signed), "head": seal["head"]}
 
 
 def verify(manifest_path: str, material: bytes | None = None) -> tuple[bool, int, int]:

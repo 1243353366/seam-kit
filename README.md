@@ -9,7 +9,8 @@ Two tools that look at artifacts instead of claims.
 
 ## The lab (polyglot)
 
-Identity assurance, temporal signals and the rest are described in
+The first complete case, a museum feed with a compromised camera, is in
+[docs/case-museum.md](docs/case-museum.md). Identity assurance, temporal signals and the rest are described in
 [docs/lab-identity.md](docs/lab-identity.md) and [docs/lab-graph.md](docs/lab-graph.md),
 and
 correlation grading and the binary-analysis exercise are described in
