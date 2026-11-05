@@ -1,0 +1,18 @@
+{
+  "sites": [
+    {"id": "PAR", "lat": 48.8606, "lon": 2.3376},
+    {"id": "LYS", "lat": 45.7640, "lon": 4.8357},
+    {"id": "MRS", "lat": 43.2965, "lon": 5.3698}
+  ],
+  "events": [
+    {"id": "par-cam-1", "site": "PAR", "subject": "principal", "kind": "sighting",
+     "at": "2026-11-05T14:02:00Z", "camera": "CAM-P1", "drift_s": 0, "drift_uncertainty_s": 2},
+    {"id": "lys-cam-1", "site": "LYS", "subject": "principal", "kind": "sighting",
+     "at": "2026-11-05T14:05:00Z", "camera": "CAM-L1", "drift_s": 0, "drift_uncertainty_s": 40},
+    {"id": "lys-door-1", "site": "LYS", "subject": "principal", "kind": "access",
+     "at": "2026-11-05T15:30:00Z", "source": "door-log", "drift_uncertainty_s": 1},
+    {"id": "mrs-cam-1", "site": "MRS", "subject": "principal", "kind": "sighting",
+     "at": "2026-11-05T15:24:00Z", "camera": "CAM-M1", "drift_s": -90, "drift_uncertainty_s": 3,
+     "identity_verified": false}
+  ]
+}

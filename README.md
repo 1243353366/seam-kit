@@ -9,7 +9,10 @@ Two tools that look at artifacts instead of claims.
 
 ## The lab (polyglot)
 
-`lab/` is Python and measures. `api/` is TypeScript on Node 24 and stores. `db/`-free: the store is
+Correlation grading and the binary-analysis exercise are described in
+[docs/lab-graph.md](docs/lab-graph.md).
+
+`lab/` is Python and measures (signals, correlation, binary analysis). `api/` is TypeScript on Node 24 and stores. `db/`-free: the store is
 SQLite through `node:sqlite`, with an append-only exhibit chain where each link hashes its
 predecessor.
 
