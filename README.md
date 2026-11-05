@@ -9,7 +9,10 @@ Two tools that look at artifacts instead of claims.
 
 ## The lab (polyglot)
 
-Correlation grading and the binary-analysis exercise are described in
+Identity assurance, temporal signals and the rest are described in
+[docs/lab-identity.md](docs/lab-identity.md) and [docs/lab-graph.md](docs/lab-graph.md),
+and
+correlation grading and the binary-analysis exercise are described in
 [docs/lab-graph.md](docs/lab-graph.md). What a verdict is allowed to claim, and the held-out
 evaluation that shows it failing, is in [docs/lab-adjudicate.md](docs/lab-adjudicate.md).
 
