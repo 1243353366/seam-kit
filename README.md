@@ -166,8 +166,14 @@ bait you cannot prove anyone ate.
 - Thresholds are guesses until `calibrate` runs on images from the same source.
 - Manipulation that respects the seam (a full re-encode, a global resample) defeats all three.
 - Generative artifacts move as the models do, so a detector tuned today is folklore in a year.
-- No video and no audio yet. Frame jitter and lip-band flicker are the next signals worth adding,
-  and they need a sequence, not a still.
+- Video is read (`lab/temporal.py`: drift, flicker, cut) but audio is not. Lip-band flicker needs
+  waveform alignment against the frames, which is not built.
+- **Authentication is not operation.** `lab/identity.py` can show who presented a credential. Nothing
+  here can show who actually acted. Europol's 2025 paper on cybercrime disruption notes that initial
+  access is bought and sold ("Initial Access Brokers are increasingly advertising these services"),
+  so a credential that verifies may belong to whoever purchased it, not to the subject named in it.
+  A successful authentication raises no claim about operation above `unknown`, and the museum case
+  reports it that way on purpose.
 - In the guard, label arbitration trusts the majority of a cluster. A flood bigger than your honest
   copies flips it, so read `clusters` and `largest_cluster` before you trust a run.
 
