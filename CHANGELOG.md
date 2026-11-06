@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-05 - THREAT-LENS 0.3: schema, engines, evidence record
+
+- **New: `lab/telemetry.py`.** Seven event kinds with per-kind required fields; `check()` raises on
+  unknown kinds, invented file operations, missing hosts and non-boolean privilege flags.
+  `investigate()` reports `schema_problems` instead of dropping malformed rows.
+- **Split into engines.** `lab/threatlens/` with `worm.py`, `trojan.py`, `software.py`,
+  `ransomware.py`, `correlate.py`, `record.py`. The public names are unchanged.
+- **New detections:** rename bursts, extension churn, weakened recovery configuration (its own
+  source), privilege escalation beside ancestry, publisher change, new bundled dependencies, new
+  privileged services, and propagation shapes that only become edges when the hosts talk to each
+  other.
+- **New: `evidence_record()` and `as_text()`.** Case, host, observations, corroborating sources,
+  alternative explanations, and a conclusion that never says "detected" and never says "confirmed".
+- **False positive caught by the control:** identical process shapes across hosts are a standardised
+  build, so similarity alone adds nothing; the test asserts the uncoupled case returns no edge.
+
 ## 2026-11-05 - THREAT-LENS
 
 - **New: `lab/threatlens.py`.** Four analysers, one per threat class, because worms fail at

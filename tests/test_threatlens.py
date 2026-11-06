@@ -61,7 +61,7 @@ class Impact(unittest.TestCase):
         events = [e for e in sim.ransomware_burst() if e["kind"] == "file"]
         claim = lens.analyse_ransomware(events)
         self.assertEqual(claim["grade"], "suspected")
-        self.assertIn("one source", " ".join(claim["observed"]))
+        self.assertIn("count once", " ".join(claim["observed"]))
 
 
 class SignatureFree(unittest.TestCase):
@@ -104,3 +104,107 @@ class Correlation(unittest.TestCase):
         self.assertEqual(finding["grade"], "corroborated")
         self.assertEqual(finding["sources"], ["binary", "network"])
         self.assertIn("updates change digests by design", " ".join(finding["limitations"]))
+
+
+class TelemetrySchema(unittest.TestCase):
+    """One schema, or every engine invents its own reading of an event."""
+
+    def test_a_stream_with_no_host_is_refused(self):
+        from lab import telemetry
+        with self.assertRaises(telemetry.SchemaError):
+            telemetry.check([{"kind": "file", "at": 1.0, "path": "a", "op": "write"}])
+
+    def test_an_invented_file_operation_is_refused(self):
+        from lab import telemetry
+        found = telemetry.problems([{"kind": "file", "at": 1.0, "host": "h", "path": "a", "op": "exfiltrate"}])
+        self.assertTrue(any("not one of" in f for f in found))
+
+    def test_problems_are_reported_not_swallowed(self):
+        report = lens.investigate([{"kind": "nonsense", "at": 1.0, "host": "h"}])
+        self.assertTrue(report["schema_problems"])
+
+    def test_hosts_and_images_are_normalised(self):
+        from lab import telemetry
+        out = telemetry.normalise({"kind": "PROCESS", "at": "12", "host": " WS-01 ", "image": "Cmd.exe"})
+        self.assertEqual(out["host"], "ws-01")
+        self.assertEqual(out["at"], 12.0)
+
+    def test_a_locked_extension_is_not_the_original(self):
+        from lab import telemetry
+        self.assertEqual(telemetry.extension("D:/shares/a.xlsx.locked"), ".locked")
+
+
+class RenameAndRecovery(unittest.TestCase):
+    def test_a_rename_burst_is_seen_even_without_new_writes(self):
+        renames = [{"kind": "file", "at": 10.0 + i, "host": "fs-02",
+                    "path": f"D:/x/doc{i}.locked", "op": "rename"} for i in range(60)]
+        claim = lens.analyse_ransomware(renames)
+        self.assertIn("rename events", " ".join(claim["observed"]))
+        self.assertEqual(claim["grade"], "suspected")
+
+    def test_weakened_recovery_configuration_is_its_own_source(self):
+        events = [{"kind": "file", "at": 1.0, "host": "fs-02", "path": f"D:/x/doc{i}.locked",
+                   "op": "write"} for i in range(90)]
+        events.append({"kind": "config", "at": 2.0, "host": "fs-02",
+                       "key": "SystemRestore", "op": "disable"})
+        claim = lens.analyse_ransomware(events)
+        self.assertEqual(claim["grade"], "corroborated")
+        self.assertEqual(claim["sources"], ["config", "file"])
+
+
+class PublisherAndDependencies(unittest.TestCase):
+    def test_a_publisher_change_counts_as_a_binary_observation(self):
+        baseline = {"binary_digest": "a" * 64, "publisher": "Acme Ltd"}
+        observed = {"binary_digest": "a" * 64, "publisher": "Acme Holdings"}
+        claim = lens.analyse_software_integrity(baseline, observed)
+        self.assertEqual(claim["grade"], "suspected")
+        self.assertIn("publisher changed", claim["observed"][0])
+
+    def test_a_new_bundled_dependency_is_its_own_source(self):
+        baseline = {"binary_digest": "a" * 64, "dependencies": ["libssl"]}
+        observed = {"binary_digest": "b" * 64, "dependencies": ["libssl", "libcrypto-extra"]}
+        claim = lens.analyse_software_integrity(baseline, observed)
+        self.assertEqual(claim["sources"], ["binary", "dependency"])
+
+
+class PrivilegeAndSimilarity(unittest.TestCase):
+    def test_elevation_alone_proves_nothing(self):
+        events = [{"kind": "privilege", "at": 1.0, "host": "ws-03", "user": "a", "elevated": True}]
+        claim = lens.analyse_trojan(events)
+        self.assertEqual(claim["grade"], "unknown")
+
+    def test_elevation_beside_ancestry_and_persistence_is_a_third_source(self):
+        events = sim.trojan_persistence() + [
+            {"kind": "privilege", "at": 304.0, "host": "ws-03", "user": "a", "elevated": True}]
+        claim = lens.analyse_trojan(events, known_destinations={"updates.vendor.example"})
+        self.assertIn("privilege", claim["sources"])
+
+    def test_identical_process_shapes_are_only_an_edge_when_the_hosts_talk(self):
+        """A standardised build puts the same image everywhere. That is not evidence."""
+        quiet = sim.worm_spread()
+        self.assertFalse(lens.pattern_similarity(quiet),
+                         "identical shapes with no coupling between the hosts is a build, not a spread")
+        spread = quiet + [
+            {"kind": "network", "at": 210.0, "host": f"fs-{i:02d}", "dst": f"fs-{i + 1:02d}",
+             "proto": "smb", "bytes": 100} for i in range(4)]
+        self.assertTrue(lens.pattern_similarity(spread))
+
+
+class EvidenceRecord(unittest.TestCase):
+    def setUp(self):
+        self.report = lens.investigate(sim.ransomware_burst(), egress_baseline=10_000_000)
+        self.record = lens.evidence_record("CASE-001", "lab-win-02", self.report)
+
+    def test_every_finding_carries_its_benign_twins(self):
+        for finding in self.record["findings"]:
+            self.assertTrue(finding["alternative_explanations"], finding["behaviour"])
+
+    def test_the_conclusion_does_not_claim_a_detection(self):
+        text = lens.as_text(self.record).lower()
+        self.assertNotIn("detected", text)
+        self.assertIn("examiner review", text)
+        self.assertFalse(self.record["confirmed"])
+
+    def test_the_record_is_storable_beside_a_media_finding(self):
+        for key in ("case", "host", "grade", "corroboration", "limitations", "next_step"):
+            self.assertIn(key, self.record)

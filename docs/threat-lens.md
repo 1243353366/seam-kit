@@ -2,8 +2,10 @@
 
 Worms, trojans, commercial software and ransomware all depend on an execution environment, trust
 relationships and assumptions. That shared sentence is true and useless, because they fail in
-different places. `lab/threatlens.py` treats them as four analysers rather than one detector, and
-`lab/simulate_incident.py` provides the benign event shapes to test them against.
+different places. `lab/threatlens/` is a package with one engine per class (`worm.py`, `trojan.py`, `software.py`,
+`ransomware.py`), a shared `correlate.py`, and `record.py` which produces the evidence record a case
+store can hold. `lab/telemetry.py` is the schema they all read, and `lab/simulate_incident.py`
+provides the benign event shapes to test them against.
 
 | class | fundamental dependency | what is graded | ATT&CK pointers (as labels, not compliance) |
 | --- | --- | --- | --- |
@@ -64,3 +66,28 @@ can support, and THREAT-LENS covers what a host did. All three end the same way:
 behind it, and the limits that stop it from being more. Ransomware's data-exposure problem is the
 clearest example of why: restoring the files does not undo the exfiltration, and an egress observation
 is the only thing here that speaks to it.
+
+## The telemetry schema comes first, and it refuses things
+
+`lab/telemetry.py` defines seven event kinds (process, file, network, service, auth, privilege,
+config) with per-kind required fields, and `check()` raises rather than guessing. This exists because
+the alternative is four engines each inventing its own reading of "a file event". It also refuses
+invented vocabulary: a file operation of `exfiltrate` is a schema error, not a detection, and a
+privilege event must say `elevated: true` or `false` rather than carry something truthy.
+
+`investigate()` collects `schema_problems` instead of throwing when `strict=False`, so a malformed
+stream can still be examined and the malformation is reported rather than silently dropped.
+
+## The evidence record
+
+`record.py` turns a correlation report into the shape a case store holds: case, host, per-finding
+observations, which telemetry sources corroborate them, the alternative explanations, and a
+conclusion. The conclusion is one of two sentences and neither contains the word "detected":
+
+- ``behaviour requiring examiner review; two or more telemetry sources agree``
+- ``behaviour requiring examiner review; one telemetry source observed it``
+
+Every finding carries its benign twins. A ransomware burst is also a bulk backup, a software update
+rewriting its files, or a legitimate mass file conversion. A detector that cannot name an alternative
+has not finished. `as_text()` renders the block the earlier proposal sketched, and `confirmed` is
+`False` in the record itself so a downstream reader cannot mistake a grade for a determination.
