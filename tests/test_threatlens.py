@@ -91,7 +91,7 @@ class Correlation(unittest.TestCase):
         report = lens.investigate(events, egress_baseline=10_000_000)
         self.assertEqual(report["grade"], "corroborated")
         self.assertGreaterEqual(len(report["channels"]), 2)
-        self.assertTrue(any("validated clock synchronisation" in l for l in report["limitations"]))
+        self.assertTrue(any("clock synchronisation is assumed" in l for l in report["limitations"]))
         self.assertTrue(report["techniques"])
 
     def test_software_drift_is_its_own_channel(self):

@@ -37,6 +37,8 @@ def correlate(findings: list[dict]) -> dict:
     limits.append("source labels do not establish statistical independence; two may share collection")
     limits.append("association is measured from each finding's anchor, so it is not transitive, "
                   "and observed proximity is not verified proximity")
+    limits.append("clock synchronisation is assumed, not verified; claims.temporal_reliability says "
+                  "which hosts it covers")
 
     return {
         "grade": grade,
