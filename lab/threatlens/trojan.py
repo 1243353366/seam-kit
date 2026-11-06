@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from lab.telemetry import sorted_events
 
-from ._common import ASSOCIATION_WINDOW_S, LATERAL_PROTOCOLS, associated, finding
+from ._common import (ASSOCIATION_WINDOW_S, LATERAL_PROTOCOLS, associated, finding,
+                      identity_collisions, identity_migrations)
 
 BEHAVIOUR = "trojan_execution"
 
@@ -34,11 +35,10 @@ def analyse(events: list[dict], known_destinations: set[str] | None = None) -> d
 
     # The anchor decides the incident. Nothing joins it from another host or another hour.
     anchor = (odd or persistence or new_egress or escalations or [None])[0]
-    host, at = (anchor["host"], float(anchor["at"])) if anchor else (None, 0.0)
     orphans = 0
-    if host:
+    if anchor is not None:
         for group in (odd, persistence, new_egress, escalations):
-            kept = associated(group, host, at)
+            kept = associated(group, anchor)
             orphans += len(group) - len(kept)
             group[:] = kept
 
@@ -68,7 +68,17 @@ def analyse(events: list[dict], known_destinations: set[str] | None = None) -> d
         limits.append(f"{len(signed)} participating process records were signed; that changes nothing here")
     if orphans:
         limits.append(f"{orphans} events were on other hosts or outside the window and were not associated")
-    limits.append("association is a host and a time window, not a proven causal link")
+    limits.append("association is a machine identity and a window measured from the anchor, "
+                  "not a proven causal link, and it is deliberately not transitive")
+    collisions = identity_collisions(events)
+    if collisions:
+        host = sorted(collisions)[0]
+        limits.append(f"host identity collision: {len(collisions[host])} machines report the name {host}")
+    migrations = identity_migrations(events)
+    if migrations:
+        machine = sorted(migrations)[0]
+        limits.append(f"machine {machine} appears as {', '.join(sorted(migrations[machine]))}: "
+                      "a rename keeps one incident")
 
     return finding(BEHAVIOUR, observations, limits,
                    ["T1059 command interpreter", "T1547 autostart", "T1041 egress",

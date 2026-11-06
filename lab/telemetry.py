@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-KINDS = {"process", "file", "network", "service", "auth", "privilege", "config"}
+KINDS = {"process", "file", "network", "service", "auth", "privilege", "config", "clock"}
 
 REQUIRED: dict[str, tuple[str, ...]] = {
     "process": ("image", "parent", "pid", "ppid"),
@@ -18,6 +18,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "auth": ("user", "result"),
     "privilege": ("user", "elevated"),
     "config": ("key", "op"),
+    "clock": ("offset_s", "verified"),
 }
 
 FILE_OPS = {"write", "delete", "rename", "create", "modify"}
@@ -85,6 +86,13 @@ def problems(events: list[dict]) -> list[str]:
             found.append(f"{where} (config): op {raw.get('op')!r} is not one of {sorted(CONFIG_OPS)}")
         if event["kind"] == "privilege" and not isinstance(event.get("elevated"), bool):
             found.append(f"{where} (privilege): `elevated` must be true or false, not a guess")
+        if event.get("machine_id") is not None and not isinstance(event["machine_id"], (str, int)):
+            found.append(f"{where}: `machine_id` must be a string or integer identity")
+        if event["kind"] == "clock":
+            if not _finite(event.get("offset_s")):
+                found.append(f"{where} (clock): `offset_s` is not a finite number")
+            if not isinstance(event.get("verified"), bool):
+                found.append(f"{where} (clock): `verified` must be true or false")
         for field in COUNTERS:
             if event.get(field) is None:
                 continue

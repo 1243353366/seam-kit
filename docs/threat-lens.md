@@ -159,3 +159,42 @@ It found two things while being written. Report prose embedded an absolute clock
 clock-shifted incident produced different text for the same finding. And a "host separation" case that
 moved only some supporting events did not drop the grade, which was the harness being wrong rather
 than the engine: moving one of three supports leaves the other two.
+
+## Three claims that must not merge
+
+Source independence, incident association and temporal reliability are separate questions, and the
+report answers each in its own field under `claims`:
+
+| claim | what is checked | what it does not establish |
+| --- | --- | --- |
+| `source_independence` | the union of telemetry sources behind the findings | whether they belong to one incident, or whether the clocks agree |
+| `incident_association` | same machine identity, inside the window, measured from the anchor | whether the clocks are trustworthy |
+| `temporal_reliability` | `verified` only when every host examined reports a verified clock offset | anything about association or sources |
+
+Association is deliberately **not transitive**: every supporting observation is measured against the
+finding's anchor, never against the nearest already-accepted event. So A within an hour of the anchor
+and C within an hour of A but two hours from the anchor are two observations and one incident, not
+three.
+
+## Identity is a machine, not a name
+
+A hostname is a label that imaging, cloning and reimaging all rewrite, which makes it a poor identity
+for an incident. Telemetry may now carry `machine_id`:
+
+- **Collision** (one hostname, two machines) is refused as association and reported as
+  `host identity collision`, because a cloned image is exactly this case.
+- **Migration** (one machine, two hostnames) keeps the incident whole and reports both names, because
+  a rename during an incident is not two incidents.
+- **Neither reported** means the engines fall back to the hostname, and the report says so rather than
+  implying an identity it does not have.
+
+## Clocks
+
+`claims.temporal_reliability` reports `verified` only when every host in the report supplies a
+`clock` event with `verified: true`, and it carries the largest absolute offset seen plus the list of
+hosts still uncovered. Without that evidence the basis is `observed`, which is the honest word for
+"these timestamps are adjacent in the data".
+
+Skew does not just blur a report, it fabricates and destroys associations: two unrelated events with
+divergent clocks can land inside one window, and one incident can break into two. `STATUS.md` is where
+these open limits belong, and they are listed there.

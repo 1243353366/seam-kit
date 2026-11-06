@@ -68,6 +68,67 @@ def max_in_window(times: list[float], window: float) -> tuple[int, float]:
     return best, best_start
 
 
-def associated(items: list[dict], host: str, at: float, window: float = ASSOCIATION_WINDOW_S) -> list[dict]:
-    """Same host, within the window. Everything else is a different incident sharing a report."""
-    return [e for e in items if e.get("host") == host and abs(float(e.get("at", 0.0)) - at) <= window]
+def identity_of(event: dict) -> str:
+    """Stable machine identity when the sensor reports one, the hostname otherwise.
+
+    A hostname is a label that imaging, cloning and reimaging all rewrite. `machine_id` is the
+    sensor's own identity for the machine, so a rename mid-incident does not split the incident and
+    two clones sharing a name do not merge into one.
+    """
+    machine = event.get("machine_id")
+    if machine not in (None, ""):
+        return f"machine:{str(machine).strip().lower()}"
+    return f"host:{str(event.get('host', '')).strip().lower()}"
+
+
+def identity_collisions(events: list[dict]) -> dict[str, set[str]]:
+    """Hostnames reported by more than one machine: imaging, cloning or misconfiguration."""
+    seen: dict[str, set[str]] = {}
+    for e in events:
+        if e.get("machine_id") in (None, ""):
+            continue
+        seen.setdefault(str(e["host"]).lower(), set()).add(str(e["machine_id"]).lower())
+    return {host: ids for host, ids in seen.items() if len(ids) > 1}
+
+
+def identity_migrations(events: list[dict]) -> dict[str, set[str]]:
+    """One machine reported under more than one hostname: a rename or reimage mid-incident."""
+    seen: dict[str, set[str]] = {}
+    for e in events:
+        if e.get("machine_id") in (None, ""):
+            continue
+        seen.setdefault(str(e["machine_id"]).lower(), set()).add(str(e["host"]).lower())
+    return {machine: hosts for machine, hosts in seen.items() if len(hosts) > 1}
+
+
+def same_identity(a: dict, b: dict) -> bool:
+    if str(a.get("machine_id") or "") and str(b.get("machine_id") or ""):
+        return identity_of(a) == identity_of(b)
+    return str(a.get("host", "")).lower() == str(b.get("host", "")).lower()
+
+
+def associated(items: list[dict], anchor: dict, at: float | None = None,
+               window: float = ASSOCIATION_WINDOW_S) -> list[dict]:
+    """Same machine identity, within the window measured from the anchor.
+
+    Measured from the *anchor* every time, never from the nearest already-accepted event, so
+    association cannot become transitive: two observations an hour apart on either side of the anchor
+    are two hours apart from each other and never join.
+    """
+    target = float(anchor["at"] if at is None else at)
+    return [e for e in items if same_identity(e, anchor) and abs(float(e["at"]) - target) <= window]
+
+
+def clock_verification(events: list[dict]) -> dict:
+    """Observed proximity versus verified proximity: separate claims, reported separately."""
+    clocks = [e for e in events if e.get("kind") == "clock"]
+    verified = [e for e in clocks if e.get("verified") is True]
+    hosts = {e["host"] for e in events if e.get("kind") != "clock"}
+    covered = {e["host"] for e in verified}
+    offsets = [abs(float(e["offset_s"])) for e in verified if isinstance(e.get("offset_s"), (int, float))]
+    return {
+        "basis": "verified" if hosts and hosts <= covered else "observed",
+        "verified_hosts": sorted(covered),
+        "max_absolute_offset_s": max(offsets) if offsets else None,
+        "unverified_hosts": sorted(hosts - covered),
+    }

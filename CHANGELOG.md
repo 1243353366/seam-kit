@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-05 - attacking the association model
+
+Four adversarial hypotheses about the association rule, tested rather than assumed.
+
+- **Host identity collision.** Two machines imaged with the same hostname were one host. Telemetry can
+  now carry `machine_id`; association matches on that when both sides report one, the collision is
+  stated as a limitation, and without any identity the report says it cannot tell the machines apart.
+- **Host migration.** A machine renamed mid-incident split into two incidents. Matching on
+  `machine_id` keeps it whole and states both hostnames; without an identity the split is stated.
+- **Clock skew.** Verified and observed proximity are now different claims. A `clock` event carries
+  `offset_s` and `verified`; `claims.temporal_reliability` reports `verified` only when every host in
+  the report is covered, lists the uncovered hosts, and otherwise says `observed`.
+- **Association transitivity.** It was never transitive, because every observation is measured against
+  the anchor rather than the nearest accepted event. It is now stated in the report and pinned by a
+  test: a config at +30min and egress at +90min do not chain into one incident.
+- **Three claims, three fields.** `claims.source_independence`, `claims.incident_association` and
+  `claims.temporal_reliability` are reported separately, each with a note saying what it does not
+  establish. Passing one cannot silently establish another.
+
 ## 2026-11-05 - incident association and a metamorphic harness
 
 Six defects reported from static inspection, all real. The common cause: the engines asked whether a

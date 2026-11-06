@@ -8,6 +8,7 @@ from __future__ import annotations
 from lab import telemetry
 
 from . import ransomware as _ransomware, software as _software, trojan as _trojan, worm as _worm
+from . import _common
 from ._common import SIGNATURE_FREE_INPUTS
 from .correlate import ALTERNATIVES, correlate
 from .record import as_text, evidence_record
@@ -44,6 +45,7 @@ def investigate(events: list[dict], *, baseline: dict | None = None,
         findings.append(_software.analyse(baseline, observed_software))
 
     report = correlate(findings)
+    report["claims"]["temporal_reliability"] = _common.clock_verification(clean)
     report.update({
         "signature_free": True,
         "schema_problems": schema_problems,

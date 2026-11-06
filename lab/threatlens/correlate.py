@@ -1,7 +1,7 @@
 """Several engines, one incident, and a record shaped for an examiner rather than a dashboard."""
 from __future__ import annotations
 
-from ._common import SIGNATURE_FREE_INPUTS, grade_for
+from ._common import ASSOCIATION_WINDOW_S, SIGNATURE_FREE_INPUTS, clock_verification, grade_for
 from lab.telemetry import problems
 
 #: What else could produce each shape. Attached to every finding, because a detector that cannot
@@ -32,9 +32,11 @@ def correlate(findings: list[dict]) -> dict:
     independent_sources = {src for f in live for src in f.get("sources", [])}
     grade = grade_for(len(independent_sources))
 
+    clocks = clock_verification(findings[0].get("_events", [])) if findings and findings[0].get("_events") else None
     limits = [l for f in live for l in f["limitations"]]
     limits.append("source labels do not establish statistical independence; two may share collection")
-    limits.append("correlation by host and time requires validated clock synchronisation")
+    limits.append("association is measured from each finding's anchor, so it is not transitive, "
+                  "and observed proximity is not verified proximity")
 
     return {
         "grade": grade,
@@ -45,6 +47,18 @@ def correlate(findings: list[dict]) -> dict:
         "affected_hosts": sorted({h for f in live for h in f.get("hosts", [])}),
         "observed": [o for f in live for o in f["observed"]],
         "alternatives": {f["behaviour"]: ALTERNATIVES.get(f["behaviour"], []) for f in live},
+        "claims": {
+            "source_independence": {"sources": sorted(independent_sources),
+                                    "note": "distinct telemetry sources; this says nothing about clocks "
+                                            "or about one incident"},
+            "incident_association": {"anchor_rule": "every supporting observation is measured against the "
+                                                    "finding's own anchor, never chained through another",
+                                     "window_s": ASSOCIATION_WINDOW_S,
+                                     "note": "same machine identity and window; this says nothing about "
+                                             "clock reliability"},
+            "temporal_reliability": clocks or {"basis": "observed",
+                                               "note": "no clock evidence supplied for the hosts examined"},
+        },
         "limitations": limits,
         "findings": findings,
         "chain": [{"behaviour": f["behaviour"], "first": f["observed"][0]} for f in live],
