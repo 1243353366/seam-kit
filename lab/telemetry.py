@@ -1,11 +1,15 @@
-"""One event schema, because four engines otherwise invent four representations of an event."""
+"""One event schema, because four engines otherwise invent four representations of an event.
+
+Canonicalisation happens *before* validation: `{"kind": "PROCESS"}` is the same event as
+`{"kind": "process"}`, and a schema that rejects one and accepts the other is measuring typing, not
+telemetry.
+"""
 from __future__ import annotations
 
 import math
 
 KINDS = {"process", "file", "network", "service", "auth", "privilege", "config"}
 
-#: Per-kind requirements. `at` and `host` are universal; everything else is kind-specific.
 REQUIRED: dict[str, tuple[str, ...]] = {
     "process": ("image", "parent", "pid", "ppid"),
     "file": ("path", "op"),
@@ -19,71 +23,102 @@ REQUIRED: dict[str, tuple[str, ...]] = {
 FILE_OPS = {"write", "delete", "rename", "create", "modify"}
 CONFIG_OPS = {"create", "modify", "delete", "disable"}
 
+#: Counters and sizes. Negative values are refused rather than read as small positives.
+COUNTERS = ("bytes", "size")
+#: Identifiers. Fractional identifiers are a sensor bug, not a measurement.
+IDENTIFIERS = ("pid", "ppid")
+
 
 class SchemaError(ValueError):
     """Raised when an event cannot be read as telemetry. Never silently converted."""
 
 
 def normalise(event: dict) -> dict:
-    """Lower-case hosts and images, coerce `at` to float. Field values only: nothing is inferred."""
+    """Canonical form: lower-case vocabulary, stripped strings, numeric timestamps."""
     out = dict(event)
-    out["kind"] = str(event.get("kind", "")).lower()
-    if isinstance(event.get("host"), str):
-        out["host"] = event["host"].strip().lower()
-    for key in ("image", "parent", "proto", "op", "result", "path", "dst", "key"):
-        if isinstance(event.get(key), str):
-            out[key] = event[key].strip()
+    for key in ("kind", "proto", "op", "result", "state", "key", "dst", "user"):
+        if isinstance(out.get(key), str):
+            out[key] = out[key].strip().lower()
+    for key in ("host", "image", "parent", "name", "path"):
+        if isinstance(out.get(key), str):
+            out[key] = out[key].strip()
+    if isinstance(out.get("host"), str):
+        out["host"] = out["host"].lower()
     try:
         out["at"] = float(event.get("at"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         pass
     return out
 
 
+def _finite(value) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(value))  # a huge int can raise on conversion
+    except (OverflowError, ValueError):
+        return False
+
+
 def problems(events: list[dict]) -> list[str]:
-    """Every reason a stream cannot be trusted, rather than the first one found."""
+    """Every reason a stream cannot be trusted, after canonicalisation and before arithmetic."""
     found: list[str] = []
-    for i, event in enumerate(events):
+    for i, raw in enumerate(events):
         where = f"event {i}"
-        if not isinstance(event, dict):
+        if not isinstance(raw, dict):
             found.append(f"{where}: not an object")
             continue
+        event = normalise(raw)
         if event.get("kind") not in KINDS:
-            found.append(f"{where}: unknown kind {event.get('kind')!r}")
+            found.append(f"{where}: unknown kind {raw.get('kind')!r}")
             continue
-        at = event.get("at")
-        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(float(at)):
+        if not _finite(event.get("at")):
             found.append(f"{where}: `at` is not a finite timestamp")
-        for field in ("bytes", "pid", "ppid", "size"):
-            if field not in event or event[field] is None:
-                continue
-            value = event[field]
-            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
-                found.append(f"{where}: `{field}` is not a finite number")
-        if not isinstance(event.get("host"), str) or not event["host"].strip():
+        if not isinstance(event.get("host"), str) or not event["host"]:
             found.append(f"{where}: no host")
         for field in REQUIRED.get(event["kind"], ()):
             if event.get(field) in (None, ""):
                 found.append(f"{where} ({event['kind']}): missing {field}")
         if event["kind"] == "file" and event.get("op") not in FILE_OPS:
-            found.append(f"{where} (file): op {event.get('op')!r} is not one of {sorted(FILE_OPS)}")
+            found.append(f"{where} (file): op {raw.get('op')!r} is not one of {sorted(FILE_OPS)}")
         if event["kind"] == "config" and event.get("op") not in CONFIG_OPS:
-            found.append(f"{where} (config): op {event.get('op')!r} is not one of {sorted(CONFIG_OPS)}")
+            found.append(f"{where} (config): op {raw.get('op')!r} is not one of {sorted(CONFIG_OPS)}")
         if event["kind"] == "privilege" and not isinstance(event.get("elevated"), bool):
             found.append(f"{where} (privilege): `elevated` must be true or false, not a guess")
+        for field in COUNTERS:
+            if event.get(field) is None:
+                continue
+            if not _finite(event[field]) or event[field] < 0:
+                found.append(f"{where}: `{field}` must be a finite non-negative number")
+        for field in IDENTIFIERS:
+            if event.get(field) is None:
+                continue
+            value = event[field]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                found.append(f"{where}: `{field}` must be a non-negative integer")
     return found
 
 
 def check(events: list[dict]) -> list[dict]:
-    """Validate and normalise, or raise. An engine that reads malformed telemetry grades noise."""
+    """Validate and return canonical events, or raise. An engine that reads malformed telemetry
+    grades noise."""
     found = problems(events)
     if found:
         raise SchemaError("; ".join(found[:6]) + (f" (+{len(found) - 6} more)" if len(found) > 6 else ""))
     return [normalise(e) for e in events]
 
 
+def order_key(event: dict) -> tuple:
+    """Deterministic ordering. The examiner's evidence must not depend on arrival order."""
+    return (event.get("at", 0.0), event.get("host", ""), event.get("kind", ""),
+            str(event.get("path") or event.get("dst") or event.get("image") or event.get("key") or ""))
+
+
+def sorted_events(events: list[dict]) -> list[dict]:
+    return sorted((normalise(e) for e in events if isinstance(e, dict)), key=order_key)
+
+
 def extension(path: str) -> str:
-    """Last dotted segment, lower-cased. `report.xlsx.locked` is `.locked`, which is the point."""
     tail = str(path).replace("\\", "/").rsplit("/", 1)[-1]
     return ("." + tail.rsplit(".", 1)[1].lower()) if "." in tail else ""
 

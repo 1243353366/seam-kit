@@ -122,3 +122,40 @@ The fourth was new and real. `lab/telemetry.py` rejected NaN and allowed infinit
 `inf` validated and then entered the burst-window arithmetic and the egress ratio. Every numeric field
 that feeds arithmetic must now be finite, and an infinite event is counted in `events_rejected`
 instead of being analysed. That is the difference between a check that looks complete and one that is.
+
+## Association: two sources are not two pieces of evidence about one incident
+
+The earlier correction counted sources instead of labels. That was necessary and not sufficient: a
+burst on one host and a disabled restore point on another are two sources and one lie, because nothing
+connected them.
+
+Every engine now picks an **anchor** (the host and clock of the primary observation) and admits
+supporting evidence only when it shares that host and falls inside `ASSOCIATION_WINDOW_S`. Evidence
+outside it is counted, reported as `not associated`, and excluded from the grade. For the worm engine
+the relationship is the fan-out itself: a service is only counted on a host the fan-out already
+reached.
+
+Two consequences worth stating plainly:
+
+- Association is a host and a time window, not a causal link. Two things on one host within an hour
+  still may not be one act.
+- Correlation across engines still assumes synchronised clocks. Nothing here verifies that.
+
+## The metamorphic harness
+
+`tools/metamorphic.py` runs one incident through eight transformations and reports whether the
+conclusion survived for the right reason.
+
+| transformation | class | expectation |
+| --- | --- | --- |
+| recase, offset clock, shuffle | meaning-preserving | identical grade and identical observations |
+| unrelated benign traffic added | meaning-preserving | grade does not increase |
+| burst straddling a minute boundary | meaning-preserving | still detected |
+| supporting events moved to another host | meaning-destroying | corroboration lost |
+| supporting events moved three days later | meaning-destroying | corroboration lost |
+| huge, negative and fractional numbers | hostile | events refused, no exception |
+
+It found two things while being written. Report prose embedded an absolute clock value, so a
+clock-shifted incident produced different text for the same finding. And a "host separation" case that
+moved only some supporting events did not drop the grade, which was the harness being wrong rather
+than the engine: moving one of three supports leaves the other two.

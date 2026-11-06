@@ -1,43 +1,59 @@
 """Ransomware fails at file access and operational control: bursts, renames, recovery, exposure."""
 from __future__ import annotations
 
-from collections import Counter
+from ._common import LATERAL_PROTOCOLS
 
-from lab.telemetry import extension
+from lab.telemetry import by_host, extension, sorted_events
 
-from ._common import BURST_FILES_PER_MINUTE, BURST_WINDOW_S, RECOVERY_CONFIG_KEYS, RECOVERY_MARKERS, RENAME_BURST, finding
+from ._common import (ASSOCIATION_WINDOW_S, BURST_FILES_PER_MINUTE, BURST_WINDOW_S, RECOVERY_CONFIG_KEYS,
+                      RECOVERY_MARKERS, RENAME_BURST, associated, finding, max_in_window)
 
 BEHAVIOUR = "ransomware_impact"
 
 
 def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
+    events = sorted_events(events)
     writes = [e for e in events if e.get("kind") == "file" and e.get("op") in ("write", "create")]
     renames = [e for e in events if e.get("kind") == "file" and e.get("op") == "rename"]
     deletes = [e for e in events if e.get("kind") == "file" and e.get("op") == "delete"]
     configs = [e for e in events if e.get("kind") == "config"]
 
-    per_minute: Counter[tuple[str, int]] = Counter()
-    for e in writes:
-        per_minute[(e["host"], int(float(e["at"]) // BURST_WINDOW_S))] += 1
-    bursts = {k: v for k, v in per_minute.items() if v >= BURST_FILES_PER_MINUTE}
-    rename_bursts = {h: n for h, n in Counter(e["host"] for e in renames).items() if n >= RENAME_BURST}
+    burst_host, burst_count, burst_at = "", 0, 0.0
+    for host, evs in by_host(writes).items():
+        count, start = max_in_window([e["at"] for e in evs], BURST_WINDOW_S)
+        if count > burst_count:
+            burst_host, burst_count, burst_at = host, count, start
+    rename_host, rename_count, rename_at = "", 0, 0.0
+    for host, evs in by_host(renames).items():
+        count, start = max_in_window([e["at"] for e in evs], BURST_WINDOW_S)
+        if count > rename_count:
+            rename_host, rename_count, rename_at = host, count, start
+
+    # One incident: the burst host and the burst's own clock. Supporting events elsewhere are a
+    # different incident that happens to share a report.
+    scope_host = burst_host or rename_host
+    scope_at = burst_at if burst_host else rename_at
+    orphans = 0
+    if scope_host:
+        for group in (deletes, configs, [e for e in events if e.get("kind") == "network"]):
+            orphans += len(group) - len(associated(group, scope_host, scope_at))
+    deletes = associated(deletes, scope_host, scope_at) if scope_host else []
+    configs = associated(configs, scope_host, scope_at) if scope_host else []
 
     observations: list[str] = []
     sources: set[str] = set()
 
-    if bursts:
-        (host, minute), n = max(bursts.items(), key=lambda kv: kv[1])
-        observations.append(f"{n} file writes on {host} inside one minute (window {minute})")
+    if burst_count >= BURST_FILES_PER_MINUTE:
+        observations.append(f"{burst_count} file writes on {burst_host} within {BURST_WINDOW_S:.0f}s")
         sources.add("file")
-    if rename_bursts:
-        host, n = max(rename_bursts.items(), key=lambda kv: kv[1])
-        observations.append(f"{n} rename events on {host}")
+    if rename_count >= RENAME_BURST:
+        observations.append(f"{rename_count} rename events on {rename_host} within {BURST_WINDOW_S:.0f}s")
         sources.add("file")
 
-    churn = {extension(e.get("path", "")) for e in writes + renames} - {""}
-    if bursts and len(churn) >= 3:
+    churn = {extension(e.get("path", "")) for e in writes + renames if e["host"] == scope_host} - {""}
+    if burst_count >= BURST_FILES_PER_MINUTE and len(churn) >= 3:
         observations.append(f"extensions churning across writes and renames: {', '.join(sorted(churn)[:4])}")
-    elif bursts and len(churn) == 1 and churn:
+    elif burst_count >= BURST_FILES_PER_MINUTE and len(churn) == 1 and churn:
         observations.append(f"a single unexpected extension dominates: {churn.pop()}")
 
     interference = [e for e in deletes
@@ -54,16 +70,20 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
 
     egress_note = None
     if egress_baseline is not None:
-        out = sum(int(e.get("bytes", 0)) for e in events if e.get("kind") == "network")
+        outbound = associated([e for e in events if e.get("kind") == "network"], scope_host, scope_at) \
+            if scope_host else []
+        outbound = [e for e in outbound if e.get("proto") not in LATERAL_PROTOCOLS]
+        out = sum(int(e.get("bytes", 0)) for e in outbound)
         if egress_baseline > 0:
             if out > egress_baseline * 3:
-                observations.append(f"egress {out / egress_baseline:.1f}x baseline before or during the burst")
+                observations.append(f"egress {out / egress_baseline:.1f}x baseline on {scope_host} "
+                                    f"within {ASSOCIATION_WINDOW_S:.0f}s of the burst")
                 sources.add("network")
         else:
             egress_note = f"egress comparison skipped: baseline {egress_baseline} is not positive"
 
     shared_note = None
-    if (bursts or rename_bursts) and (interference or weakened):
+    if (burst_count >= BURST_FILES_PER_MINUTE or rename_count >= RENAME_BURST) and (interference or weakened):
         shared_note = "write burst and recovery interference are both file metadata, so they count once"
 
     limits = [
@@ -76,6 +96,9 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
         limits.append(shared_note)
     if egress_note:
         limits.append(egress_note)
+    if orphans:
+        limits.append(f"{orphans} supporting events were on other hosts or outside the window and were not associated")
+    limits.append("association is a host and a time window, not a proven causal link")
     return finding(BEHAVIOUR, observations, limits,
                    ["T1486 data encrypted for impact", "T1490 inhibit system recovery"] if observations else [],
                    sources)

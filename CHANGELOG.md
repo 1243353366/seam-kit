@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-11-05 - incident association and a metamorphic harness
+
+Six defects reported from static inspection, all real. The common cause: the engines asked whether a
+behaviour existed somewhere in the stream, not whether it happened to the same incident.
+
+- **Cross-host corroboration.** A burst on `fs-01` and a recovery-configuration change on `ws-99`
+  graded as corroborated ransomware. Findings are now scoped to an anchor host and clock, and
+  supporting events must be on that host within `ASSOCIATION_WINDOW_S`; the rest are counted as
+  unassociated and stated as a limitation. Same fix in the trojan engine.
+- **Fixed-bucket bursts.** `at // 60` put 60 writes at 59.9s and 60.1s into two buckets of 30.
+  `max_in_window()` finds the largest count inside any rolling span.
+- **Unconstrained egress.** Every network event in the stream was summed into a sentence claiming it
+  happened "before or during the burst". Now scoped to the burst host, the window, and non-lateral
+  traffic.
+- **Validation before canonicalisation.** `{"kind": "PROCESS"}` was rejected while `"process"` passed,
+  and `"SMB"` passed the schema then failed lateral detection. `problems()` canonicalises first.
+- **Rename bursts with no time window.** 60 renames across three days counted as a burst; renames now
+  use the same rolling window as writes.
+- **Order-dependent evidence.** `odd[0]`, `persistence[0]`, `interference[0]` made the examiner's
+  supporting event depend on arrival order. Events are sorted at intake by
+  `(at, host, kind, identifier)`, and report prose no longer embeds absolute clock values.
+- **New: `tools/metamorphic.py`.** Eight transformations in two classes, meaning-preserving (case,
+  clock offset, ordering) and meaning-destroying (host separation, temporal separation, unrelated
+  traffic), plus a hostile-numbers case. `python3 -m tools.metamorphic` prints the matrix and exits
+  non-zero on a failure; `tests/test_metamorphic.py` runs the same matrix in CI.
+- **Numeric constraints split by meaning.** `bytes` and `size` must be finite and non-negative;
+  `pid` and `ppid` must be non-negative integers. A huge integer that raises `OverflowError` on
+  `float()` is refused rather than crashing validation.
+
 ## 2026-11-05 - non-finite numbers
 
 - **`lab/telemetry.py` refused NaN but accepted infinity.** A timestamp of `inf` passed validation

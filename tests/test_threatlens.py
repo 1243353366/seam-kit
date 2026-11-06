@@ -286,7 +286,7 @@ class NonFiniteNumbers(unittest.TestCase):
         from lab import telemetry
         found = telemetry.problems([{"kind": "network", "at": 1.0, "host": "h", "dst": "d",
                                      "proto": "https", "bytes": float("inf")}])
-        self.assertTrue(any("finite number" in f for f in found))
+        self.assertTrue(any("finite non-negative" in f for f in found))
 
     def test_a_large_but_finite_number_is_accepted(self):
         from lab import telemetry
