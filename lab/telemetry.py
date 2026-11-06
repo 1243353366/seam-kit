@@ -52,8 +52,14 @@ def problems(events: list[dict]) -> list[str]:
             found.append(f"{where}: unknown kind {event.get('kind')!r}")
             continue
         at = event.get("at")
-        if not isinstance(at, (int, float)) or isinstance(at, bool) or math.isnan(float(at)):
-            found.append(f"{where}: `at` is not a usable timestamp")
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(float(at)):
+            found.append(f"{where}: `at` is not a finite timestamp")
+        for field in ("bytes", "pid", "ppid", "size"):
+            if field not in event or event[field] is None:
+                continue
+            value = event[field]
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(float(value)):
+                found.append(f"{where}: `{field}` is not a finite number")
         if not isinstance(event.get("host"), str) or not event["host"].strip():
             found.append(f"{where}: no host")
         for field in REQUIRED.get(event["kind"], ()):

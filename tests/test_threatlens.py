@@ -271,3 +271,30 @@ class ExternalReviewRegressions(unittest.TestCase):
 
     def test_empty_telemetry_is_unknown(self):
         self.assertEqual(lens.investigate([])["grade"], "unknown")
+
+
+class NonFiniteNumbers(unittest.TestCase):
+    """NaN was refused and infinity was not, which is half a check."""
+
+    def test_an_infinite_timestamp_is_refused(self):
+        from lab import telemetry
+        for bad in (float("inf"), float("-inf")):
+            found = telemetry.problems([{"kind": "file", "at": bad, "host": "h", "path": "a", "op": "write"}])
+            self.assertTrue(any("finite timestamp" in f for f in found), bad)
+
+    def test_an_infinite_byte_count_is_refused(self):
+        from lab import telemetry
+        found = telemetry.problems([{"kind": "network", "at": 1.0, "host": "h", "dst": "d",
+                                     "proto": "https", "bytes": float("inf")}])
+        self.assertTrue(any("finite number" in f for f in found))
+
+    def test_a_large_but_finite_number_is_accepted(self):
+        from lab import telemetry
+        self.assertEqual(telemetry.problems([{"kind": "network", "at": 1e12, "host": "h", "dst": "d",
+                                              "proto": "https", "bytes": 10 ** 15}]), [])
+
+    def test_an_infinite_event_is_rejected_not_analysed(self):
+        report = lens.investigate([{"kind": "file", "at": float("inf"), "host": "h",
+                                    "path": "a", "op": "write"}])
+        self.assertEqual(report["events_rejected"], 1)
+        self.assertEqual(report["grade"], "unknown")

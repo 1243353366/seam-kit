@@ -110,3 +110,15 @@ observations. It reads as a limitation now, which is where a statement about evi
 The review also asked that the correlation rule carry its own caveat. It does: source labels do not
 establish statistical independence, and two sensors can share collection infrastructure. Correlation
 by host and time additionally assumes synchronised clocks, which this repository does not verify.
+
+## Second review pass
+
+A second review of commit `73e5bf9` reported four code defects. Three of them had already been fixed
+in the following commit, `48417c8`, which that review did not see: correlation graded on detector
+labels, lexical version comparison, and a validation fallback that let malformed events reach the
+engines. Each carries its regression test.
+
+The fourth was new and real. `lab/telemetry.py` rejected NaN and allowed infinity, so a timestamp of
+`inf` validated and then entered the burst-window arithmetic and the egress ratio. Every numeric field
+that feeds arithmetic must now be finite, and an infinite event is counted in `events_rejected`
+instead of being analysed. That is the difference between a check that looks complete and one that is.

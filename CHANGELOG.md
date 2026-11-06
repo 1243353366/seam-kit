@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-05 - non-finite numbers
+
+- **`lab/telemetry.py` refused NaN but accepted infinity.** A timestamp of `inf` passed validation
+  and reached arithmetic in the burst windows and the egress ratio. `at`, `bytes`, `pid`, `ppid` and
+  `size` must now be finite, and an infinite event is rejected rather than analysed. Four tests.
+
 ## 2026-11-05 - external review pass
 
 Five defects were reported against THREAT-LENS. Three were real, one was already guarded and one was
