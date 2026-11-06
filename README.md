@@ -41,6 +41,8 @@ parts, so every claim above can be checked by running `make case` rather than ta
 The first complete case is in [docs/case-museum.md](docs/case-museum.md). Modules and their
 method notes are in [docs/lab-identity.md](docs/lab-identity.md),
 [docs/lab-graph.md](docs/lab-graph.md) and [docs/lab-adjudicate.md](docs/lab-adjudicate.md).
+Host behaviour for four threat classes, with independence counted in telemetry sources rather
+than observations, is in [docs/threat-lens.md](docs/threat-lens.md).
 What an intrusion record has to contain, read off CISA's playbook and Europol's 2025
 paper rather than recalled, is in [docs/intrusion-model.md](docs/intrusion-model.md). How the external audit's ten findings were
 triaged, including the two I think describe a boundary rather than a defect, is in

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-05 - THREAT-LENS
+
+- **New: `lab/threatlens.py`.** Four analysers, one per threat class, because worms fail at
+  propagation, trojans at execution and trust, commercial software at vendor trust, and ransomware at
+  file access and recovery. No analyser takes a name, a hash, a signature or file contents.
+- **Independence counted in telemetry sources.** The audit's finding about two signals on the same
+  pixels applies here too: a write burst and a deleted shadow copy are both file metadata and count
+  once. One source is `suspected`, two are `corroborated`, nothing is `confirmed`.
+- **New: `lab/simulate_incident.py`.** Benign event generators for the four shapes plus an ordinary
+  day, which is the false-positive control.
+- **Fixed during the build:** sources were asserted per analyser instead of accruing per observation,
+  so a fan-out-only stream reached `corroborated` on one log. Caught by a test that removes the
+  service events. Autostart matching also only knew backslashes and missed a forward-slash path.
+
 ## 2026-11-05 - case 001: the museum feed
 
 - **New: `lab/conceal.py`.** Counter-forensics as four checks: a clock that disagrees with the
