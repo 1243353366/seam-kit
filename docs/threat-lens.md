@@ -69,8 +69,8 @@ is the only thing here that speaks to it.
 
 ## The telemetry schema comes first, and it refuses things
 
-`lab/telemetry.py` defines seven event kinds (process, file, network, service, auth, privilege,
-config) with per-kind required fields, and `check()` raises rather than guessing. This exists because
+`lab/telemetry.py` defines eight event kinds (process, file, network, service, auth, privilege,
+config, clock) with per-kind required fields, and `check()` raises rather than guessing. This exists because
 the alternative is four engines each inventing its own reading of "a file event". It also refuses
 invented vocabulary: a file operation of `exfiltrate` is a schema error, not a detection, and a
 privilege event must say `elevated: true` or `false` rather than carry something truthy.
@@ -137,8 +137,9 @@ reached.
 
 Two consequences worth stating plainly:
 
-- Association is a host and a time window, not a causal link. Two things on one host within an hour
-  still may not be one act.
+- Association is a machine identity and a time window measured from the anchor, not a causal link.
+  Two things on one machine within an hour still may not be one act. Events that carry no identity on
+  a hostname known to be shared by several machines are refused rather than attributed by name.
 - Correlation across engines still assumes synchronised clocks. Nothing here verifies that.
 
 ## The metamorphic harness
@@ -190,9 +191,15 @@ for an incident. Telemetry may now carry `machine_id`:
 
 ## Clocks
 
-`claims.temporal_reliability` reports `verified` only when every host in the report supplies a
-`clock` event with `verified: true`, and it carries the largest absolute offset seen plus the list of
-hosts still uncovered. Without that evidence the basis is `observed`, which is the honest word for
+`claims.temporal_reliability` reports `verified` only when **every machine identity that contributes
+events** supplies a `clock` event that is inside `CLOCK_VALIDITY_S` of that machine's own anchor and
+names an independent attestation. It carries the largest absolute offset seen, the attestations counted,
+the identities still uncovered, and the clock events it rejected and why (`unverified`, `unattested`,
+`stale`, `ambiguous`).
+
+A `verified: true` boolean from the same telemetry stream is an assertion by an interested party, not
+verification. That is why `attested_by` is required and why a bare boolean is refused by the schema
+rather than silently trusted: it appears in `events_rejected` instead of raising the basis. Without that evidence the basis is `observed`, which is the honest word for
 "these timestamps are adjacent in the data".
 
 Skew does not just blur a report, it fabricates and destroys associations: two unrelated events with

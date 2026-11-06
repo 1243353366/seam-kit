@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from lab.telemetry import sorted_events
 
-from ._common import (ASSOCIATION_WINDOW_S, LATERAL_PROTOCOLS, associated, finding,
-                      identity_collisions, identity_migrations)
+from ._common import (ASSOCIATION_WINDOW_S, Identity, LATERAL_PROTOCOLS, associated, finding,
+                      identity_of)
 
 BEHAVIOUR = "trojan_execution"
 
@@ -21,6 +21,7 @@ AUTOSTART_MARKERS = (
 def analyse(events: list[dict], known_destinations: set[str] | None = None) -> dict:
     known = known_destinations or set()
     events = sorted_events(events)
+    index = Identity(events)
     observations: list[str] = []
     sources: set[str] = set()
 
@@ -38,7 +39,7 @@ def analyse(events: list[dict], known_destinations: set[str] | None = None) -> d
     orphans = 0
     if anchor is not None:
         for group in (odd, persistence, new_egress, escalations):
-            kept = associated(group, anchor)
+            kept = associated(group, anchor, index=index)
             orphans += len(group) - len(kept)
             group[:] = kept
 
@@ -70,16 +71,16 @@ def analyse(events: list[dict], known_destinations: set[str] | None = None) -> d
         limits.append(f"{orphans} events were on other hosts or outside the window and were not associated")
     limits.append("association is a machine identity and a window measured from the anchor, "
                   "not a proven causal link, and it is deliberately not transitive")
-    collisions = identity_collisions(events)
-    if collisions:
-        host = sorted(collisions)[0]
-        limits.append(f"host identity collision: {len(collisions[host])} machines report the name {host}")
-    migrations = identity_migrations(events)
-    if migrations:
-        machine = sorted(migrations)[0]
-        limits.append(f"machine {machine} appears as {', '.join(sorted(migrations[machine]))}: "
+    if index.collisions:
+        host = sorted(index.collisions)[0]
+        limits.append(f"host identity collision: {len(index.collisions[host])} machines report the name "
+                      f"{host}; events on it without an identity were refused")
+    if index.migrations:
+        machine = sorted(index.migrations)[0]
+        limits.append(f"machine {machine} appears as {', '.join(sorted(index.migrations[machine]))}: "
                       "a rename keeps one incident")
 
     return finding(BEHAVIOUR, observations, limits,
                    ["T1059 command interpreter", "T1547 autostart", "T1041 egress",
-                    "T1068 privilege escalation"] if observations else [], sources)
+                    "T1068 privilege escalation"] if observations else [], sources,
+                   {"anchor": anchor} if anchor is not None else {})

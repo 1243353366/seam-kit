@@ -18,7 +18,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     "auth": ("user", "result"),
     "privilege": ("user", "elevated"),
     "config": ("key", "op"),
-    "clock": ("offset_s", "verified"),
+    "clock": ("offset_s", "verified", "attested_by"),
 }
 
 FILE_OPS = {"write", "delete", "rename", "create", "modify"}
@@ -86,13 +86,21 @@ def problems(events: list[dict]) -> list[str]:
             found.append(f"{where} (config): op {raw.get('op')!r} is not one of {sorted(CONFIG_OPS)}")
         if event["kind"] == "privilege" and not isinstance(event.get("elevated"), bool):
             found.append(f"{where} (privilege): `elevated` must be true or false, not a guess")
-        if event.get("machine_id") is not None and not isinstance(event["machine_id"], (str, int)):
-            found.append(f"{where}: `machine_id` must be a string or integer identity")
+        machine = raw.get("machine_id")
+        if machine is not None:
+            # bool is a subclass of int in Python, so `True` would otherwise pass as identifier 1
+            if isinstance(machine, bool) or not isinstance(machine, (str, int)):
+                found.append(f"{where}: `machine_id` must be a non-boolean string or integer")
+            elif isinstance(machine, str) and not machine.strip():
+                found.append(f"{where}: `machine_id` is blank")
         if event["kind"] == "clock":
             if not _finite(event.get("offset_s")):
                 found.append(f"{where} (clock): `offset_s` is not a finite number")
             if not isinstance(event.get("verified"), bool):
                 found.append(f"{where} (clock): `verified` must be true or false")
+            if not isinstance(event.get("attested_by"), str) or not event["attested_by"].strip():
+                found.append(f"{where} (clock): `attested_by` must name the independent source; "
+                             "a bare boolean is an assertion, not verification")
         for field in COUNTERS:
             if event.get(field) is None:
                 continue

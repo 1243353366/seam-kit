@@ -45,7 +45,8 @@ def investigate(events: list[dict], *, baseline: dict | None = None,
         findings.append(_software.analyse(baseline, observed_software))
 
     report = correlate(findings)
-    report["claims"]["temporal_reliability"] = _common.clock_verification(clean)
+    anchors = [f["anchor"] for f in report["findings"] if f.get("anchor")]
+    report["claims"]["temporal_reliability"] = _common.clock_verification(clean, anchors)
     report.update({
         "signature_free": True,
         "schema_problems": schema_problems,

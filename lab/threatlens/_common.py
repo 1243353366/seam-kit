@@ -68,6 +68,18 @@ def max_in_window(times: list[float], window: float) -> tuple[int, float]:
     return best, best_start
 
 
+#: Clock evidence older or newer than this relative to an anchor says nothing about that anchor.
+CLOCK_VALIDITY_S = 3600.0
+
+
+def machine_id_of(event: dict) -> str | None:
+    machine = event.get("machine_id")
+    if machine is None or isinstance(machine, bool):
+        return None
+    text = str(machine).strip().lower()
+    return text or None
+
+
 def identity_of(event: dict) -> str:
     """Stable machine identity when the sensor reports one, the hostname otherwise.
 
@@ -75,9 +87,9 @@ def identity_of(event: dict) -> str:
     sensor's own identity for the machine, so a rename mid-incident does not split the incident and
     two clones sharing a name do not merge into one.
     """
-    machine = event.get("machine_id")
-    if machine not in (None, ""):
-        return f"machine:{str(machine).strip().lower()}"
+    machine = machine_id_of(event)
+    if machine:
+        return f"machine:{machine}"
     return f"host:{str(event.get('host', '')).strip().lower()}"
 
 
@@ -101,14 +113,38 @@ def identity_migrations(events: list[dict]) -> dict[str, set[str]]:
     return {machine: hosts for machine, hosts in seen.items() if len(hosts) > 1}
 
 
+class Identity:
+    """Who is who, and which hostnames are no longer able to answer that question.
+
+    A hostname that appears with two machine identities is a clone or a misconfiguration. Once that
+    is known, an event carrying no identity on that hostname cannot be attributed to either machine,
+    so it is refused rather than matched by name.
+    """
+
+    def __init__(self, events: list[dict]):
+        self.collisions = identity_collisions(events)
+        self.migrations = identity_migrations(events)
+
+    def ambiguous(self, event: dict) -> bool:
+        return (machine_id_of(event) is None
+                and str(event.get("host", "")).lower() in self.collisions)
+
+    def same(self, a: dict, b: dict) -> bool:
+        left, right = machine_id_of(a), machine_id_of(b)
+        if left and right:
+            return left == right
+        if str(a.get("host", "")).lower() != str(b.get("host", "")).lower():
+            return False
+        return not (self.ambiguous(a) or self.ambiguous(b))
+
+
 def same_identity(a: dict, b: dict) -> bool:
-    if str(a.get("machine_id") or "") and str(b.get("machine_id") or ""):
-        return identity_of(a) == identity_of(b)
-    return str(a.get("host", "")).lower() == str(b.get("host", "")).lower()
+    """Pairwise identity with no context. Prefer `Identity.same`, which knows about collisions."""
+    return Identity([a, b]).same(a, b)
 
 
 def associated(items: list[dict], anchor: dict, at: float | None = None,
-               window: float = ASSOCIATION_WINDOW_S) -> list[dict]:
+               window: float = ASSOCIATION_WINDOW_S, index: "Identity | None" = None) -> list[dict]:
     """Same machine identity, within the window measured from the anchor.
 
     Measured from the *anchor* every time, never from the nearest already-accepted event, so
@@ -116,19 +152,65 @@ def associated(items: list[dict], anchor: dict, at: float | None = None,
     are two hours apart from each other and never join.
     """
     target = float(anchor["at"] if at is None else at)
-    return [e for e in items if same_identity(e, anchor) and abs(float(e["at"]) - target) <= window]
+    idx = index or Identity(items + [anchor])
+    return [e for e in items if idx.same(e, anchor) and abs(float(e["at"]) - target) <= window]
 
 
-def clock_verification(events: list[dict]) -> dict:
-    """Observed proximity versus verified proximity: separate claims, reported separately."""
-    clocks = [e for e in events if e.get("kind") == "clock"]
-    verified = [e for e in clocks if e.get("verified") is True]
-    hosts = {e["host"] for e in events if e.get("kind") != "clock"}
-    covered = {e["host"] for e in verified}
-    offsets = [abs(float(e["offset_s"])) for e in verified if isinstance(e.get("offset_s"), (int, float))]
+def clock_verification(events: list[dict], anchors: list[dict] | None = None) -> dict:
+    """Observed proximity versus verified proximity: separate claims, reported separately.
+
+    `verified: true` from the same untrusted stream is an assertion, so a clock event only counts when
+    it names an independent attestation and sits inside `CLOCK_VALIDITY_S` of the anchor it is meant to
+    support. Coverage is per machine identity, not per hostname: one clock on one of two clones covers
+    one clone.
+    """
+    anchors = anchors or []
+    idx = Identity(events)
+    # Every machine whose timestamps the report leans on, not just the ones with findings: a
+    # `verified` badge over a stream containing unwitnessed clocks would be a lie by omission.
+    relevant = {identity_of(e) for e in events if e.get("kind") != "clock"} | {identity_of(a) for a in anchors}
+    reference: dict[str, dict] = {}
+    for event in [e for e in events if e.get("kind") != "clock"]:
+        current = reference.get(identity_of(event))
+        if current is None or float(event["at"]) < float(current["at"]):
+            reference[identity_of(event)] = event
+    for anchor in anchors:
+        reference.setdefault(identity_of(anchor), anchor)
+    covered: set[str] = set()
+    offsets: list[float] = []
+    attestations: set[str] = set()
+    rejected = {"unverified": 0, "unattested": 0, "stale": 0, "ambiguous": 0}
+
+    for clock in (e for e in events if e.get("kind") == "clock"):
+        if clock.get("verified") is not True:
+            rejected["unverified"] += 1
+            continue
+        attestation = str(clock.get("attested_by") or "").strip()
+        if not attestation:
+            rejected["unattested"] += 1
+            continue
+        if idx.ambiguous(clock):
+            rejected["ambiguous"] += 1
+            continue
+        known = reference.get(identity_of(clock))
+        if known is None:
+            continue  # a clock for a machine that contributes no events is not coverage
+        if abs(float(clock["at"]) - float(known["at"])) > CLOCK_VALIDITY_S:
+            rejected["stale"] += 1
+            continue
+        covered.add(identity_of(clock))
+        attestations.add(attestation)
+        if isinstance(clock.get("offset_s"), (int, float)):
+            offsets.append(abs(float(clock["offset_s"])))
+
     return {
-        "basis": "verified" if hosts and hosts <= covered else "observed",
-        "verified_hosts": sorted(covered),
+        "basis": "verified" if relevant and relevant <= covered else "observed",
+        "verified_identities": sorted(covered),
+        "unverified_identities": sorted(relevant - covered),
         "max_absolute_offset_s": max(offsets) if offsets else None,
-        "unverified_hosts": sorted(hosts - covered),
+        "attested_by": sorted(attestations),
+        "rejected_clock_events": {k: v for k, v in rejected.items() if v},
+        "validity_window_s": CLOCK_VALIDITY_S,
+        "note": "verified needs an independently attested clock, on that machine identity, inside "
+                "the validity window; a bare boolean is an assertion",
     }

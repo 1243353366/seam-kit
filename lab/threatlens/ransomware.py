@@ -5,9 +5,8 @@ from ._common import LATERAL_PROTOCOLS
 
 from lab.telemetry import by_host, extension, sorted_events
 
-from ._common import (ASSOCIATION_WINDOW_S, BURST_FILES_PER_MINUTE, BURST_WINDOW_S, RECOVERY_CONFIG_KEYS,
-                      RECOVERY_MARKERS, RENAME_BURST, associated, finding, identity_collisions,
-                      identity_migrations, identity_of, max_in_window)
+from ._common import (ASSOCIATION_WINDOW_S, Identity, BURST_FILES_PER_MINUTE, BURST_WINDOW_S, RECOVERY_CONFIG_KEYS,
+                      RECOVERY_MARKERS, RENAME_BURST, associated, finding, identity_of, max_in_window)
 
 BEHAVIOUR = "ransomware_impact"
 
@@ -21,6 +20,7 @@ def _by_identity(events: list[dict]) -> dict[str, list[dict]]:
 
 def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
     events = sorted_events(events)
+    index = Identity(events)
     writes = [e for e in events if e.get("kind") == "file" and e.get("op") in ("write", "create")]
     renames = [e for e in events if e.get("kind") == "file" and e.get("op") == "rename"]
     deletes = [e for e in events if e.get("kind") == "file" and e.get("op") == "delete"]
@@ -47,9 +47,9 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
     orphans = 0
     if anchor:
         for group in (deletes, configs, network):
-            orphans += len(group) - len(associated(group, anchor, scope_at))
-    deletes = associated(deletes, anchor, scope_at) if anchor else []
-    configs = associated(configs, anchor, scope_at) if anchor else []
+            orphans += len(group) - len(associated(group, anchor, scope_at, index=index))
+    deletes = associated(deletes, anchor, scope_at, index=index) if anchor else []
+    configs = associated(configs, anchor, scope_at, index=index) if anchor else []
 
     observations: list[str] = []
     sources: set[str] = set()
@@ -83,7 +83,7 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
 
     egress_note = None
     if egress_baseline is not None:
-        outbound = associated(network, anchor, scope_at) if anchor else []
+        outbound = associated(network, anchor, scope_at, index=index) if anchor else []
         outbound = [e for e in outbound if e.get("proto") not in LATERAL_PROTOCOLS]
         out = sum(int(e.get("bytes", 0)) for e in outbound)
         if egress_baseline > 0:
@@ -112,15 +112,14 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
         limits.append(f"{orphans} supporting events were on other hosts or outside the window and were not associated")
     limits.append("association is a machine identity and a window measured from the anchor, "
                   "not a proven causal link, and it is deliberately not transitive")
-    collisions = identity_collisions(events)
-    if collisions:
-        host = sorted(collisions)[0]
-        limits.append(f"host identity collision: {len(collisions[host])} machines report the name {host}")
-    migrations = identity_migrations(events)
-    if migrations:
-        machine = sorted(migrations)[0]
-        limits.append(f"machine {machine} appears as {', '.join(sorted(migrations[machine]))}: "
+    if index.collisions:
+        host = sorted(index.collisions)[0]
+        limits.append(f"host identity collision: {len(index.collisions[host])} machines report the name "
+                      f"{host}; events on it without an identity were refused")
+    if index.migrations:
+        machine = sorted(index.migrations)[0]
+        limits.append(f"machine {machine} appears as {', '.join(sorted(index.migrations[machine]))}: "
                       "a rename keeps one incident")
     return finding(BEHAVIOUR, observations, limits,
                    ["T1486 data encrypted for impact", "T1490 inhibit system recovery"] if observations else [],
-                   sources)
+                   sources, {"anchor": anchor} if anchor else {})

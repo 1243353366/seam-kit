@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-11-05 - ambiguity and clock quality
+
+Two defects in the previous commit's identity model, and stale prose.
+
+- **Anonymous events could borrow a collided hostname.** `same_identity()` fell back to hostname
+  equality whenever either side lacked `machine_id`, so on a hostname reported by two machines an
+  unattributed event still corroborated one of them. `Identity` now refuses that event, and the
+  limitation says so. Events on unambiguous hostnames still associate: the refusal is specific.
+- **Clock coverage was counted per hostname and with no relevance test.** A clock from another day,
+  or a bare `verified: true`, raised the basis to `verified`. Coverage is now per machine identity,
+  inside `CLOCK_VALIDITY_S` of that machine's anchor, and `attested_by` is required; rejected clock
+  events are counted by reason (`unverified`, `unattested`, `stale`, `ambiguous`).
+- **`machine_id: True` passed validation** because Python's `bool` is an `int` subclass. Refused, as
+  is a blank identifier.
+- **Docs reconciled:** eight event kinds, identity-based association, and the clock model described
+  as it is implemented rather than as it was.
+
+Eleven tests, including one asserting that the ambiguity refusal does not become a blanket ban.
+
 ## 2026-11-05 - attacking the association model
 
 Four adversarial hypotheses about the association rule, tested rather than assumed.
