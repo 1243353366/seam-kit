@@ -61,7 +61,7 @@ class Impact(unittest.TestCase):
         events = [e for e in sim.ransomware_burst() if e["kind"] == "file"]
         claim = lens.analyse_ransomware(events)
         self.assertEqual(claim["grade"], "suspected")
-        self.assertIn("count once", " ".join(claim["observed"]))
+        self.assertIn("count once", " ".join(claim["limitations"]))
 
 
 class SignatureFree(unittest.TestCase):
@@ -91,7 +91,7 @@ class Correlation(unittest.TestCase):
         report = lens.investigate(events, egress_baseline=10_000_000)
         self.assertEqual(report["grade"], "corroborated")
         self.assertGreaterEqual(len(report["channels"]), 2)
-        self.assertTrue(any("no shared clock discipline" in l for l in report["limitations"]))
+        self.assertTrue(any("validated clock synchronisation" in l for l in report["limitations"]))
         self.assertTrue(report["techniques"])
 
     def test_software_drift_is_its_own_channel(self):
@@ -208,3 +208,66 @@ class EvidenceRecord(unittest.TestCase):
     def test_the_record_is_storable_beside_a_media_finding(self):
         for key in ("case", "host", "grade", "corroboration", "limitations", "next_step"):
             self.assertIn(key, self.record)
+
+
+class ExternalReviewRegressions(unittest.TestCase):
+    """The defects an outside reviewer found, each pinned by the test that would have caught it."""
+
+    def test_two_labels_on_one_source_are_not_corroboration(self):
+        """Different detector names are not independent evidence."""
+        a = {"behaviour": "worm_propagation", "grade": "suspected", "observed": ["x"], "sources": ["network"],
+             "independent_channels": 1, "techniques": [], "limitations": [], "hosts": []}
+        b = {"behaviour": "ransomware_impact", "grade": "suspected", "observed": ["y"], "sources": ["network"],
+             "independent_channels": 1, "techniques": [], "limitations": [], "hosts": []}
+        report = lens.correlate([a, b])
+        self.assertEqual(report["grade"], "suspected")
+        self.assertEqual(report["independent_sources"], ["network"])
+        self.assertEqual(len(report["channels"]), 2)
+
+    def test_two_distinct_sources_still_corroborate(self):
+        a = {"behaviour": "ransomware_impact", "grade": "suspected", "observed": ["x"], "sources": ["file"],
+             "independent_channels": 1, "techniques": [], "limitations": [], "hosts": []}
+        b = {"behaviour": "trojan_execution", "grade": "suspected", "observed": ["y"], "sources": ["network"],
+             "independent_channels": 1, "techniques": [], "limitations": [], "hosts": []}
+        self.assertEqual(lens.correlate([a, b])["grade"], "corroborated")
+
+    def test_a_zero_egress_baseline_is_skipped_not_divided(self):
+        claim = lens.analyse_ransomware(sim.ransomware_burst(), egress_baseline=0)
+        self.assertIn("not positive", " ".join(claim["limitations"]))
+        self.assertNotIn("network", claim["sources"])
+
+    def test_a_negative_egress_baseline_is_rejected(self):
+        claim = lens.analyse_ransomware(sim.ransomware_burst(), egress_baseline=-5)
+        self.assertIn("not positive", " ".join(claim["limitations"]))
+
+    def test_versions_compare_numerically_not_lexically(self):
+        baseline = {"binary_digest": "a" * 64, "version": "4.9"}
+        observed = {"binary_digest": "a" * 64, "version": "4.10"}
+        claim = lens.analyse_software_integrity(baseline, observed)
+        self.assertFalse(any("backwards" in o for o in claim["observed"]))
+
+    def test_a_real_downgrade_is_still_caught_numerically(self):
+        baseline = {"binary_digest": "a" * 64, "version": "4.10"}
+        observed = {"binary_digest": "a" * 64, "version": "4.9"}
+        claim = lens.analyse_software_integrity(baseline, observed)
+        self.assertTrue(any("backwards" in o for o in claim["observed"]))
+
+    def test_an_unparseable_version_is_unavailable_evidence_not_a_guess(self):
+        baseline = {"binary_digest": "a" * 64, "version": "release-candidate"}
+        observed = {"binary_digest": "a" * 64, "version": "4.9"}
+        claim = lens.analyse_software_integrity(baseline, observed)
+        self.assertIn("ordering unavailable", " ".join(claim["limitations"]))
+
+    def test_one_malformed_event_does_not_crash_the_investigation(self):
+        events = sim.benign_day() + [{"kind": "file", "at": 1.0}]  # no host, no path
+        report = lens.investigate(events)  # must not raise
+        self.assertEqual(report["events_rejected"], 1)
+        self.assertTrue(report["events_examined"])
+
+    def test_a_burst_plus_recovery_deletion_is_still_one_file_source(self):
+        claim = lens.analyse_ransomware([e for e in sim.ransomware_burst() if e["kind"] == "file"])
+        self.assertEqual(claim["sources"], ["file"])
+        self.assertEqual(claim["independent_channels"], 1)
+
+    def test_empty_telemetry_is_unknown(self):
+        self.assertEqual(lens.investigate([])["grade"], "unknown")

@@ -91,3 +91,22 @@ Every finding carries its benign twins. A ransomware burst is also a bulk backup
 rewriting its files, or a legitimate mass file conversion. A detector that cannot name an alternative
 has not finished. `as_text()` renders the block the earlier proposal sketched, and `confirmed` is
 `False` in the record itself so a downstream reader cannot mistake a grade for a determination.
+
+## Corrections from the external review
+
+Three of the five reported defects were real and are fixed with tests: correlation graded on detector
+labels rather than telemetry sources, lexical version comparison, and a validation fallback that kept
+malformed events and let an engine raise instead of returning a controlled result.
+
+One was already guarded and is worth stating plainly, because the report and the code disagreed: the
+egress comparison short-circuits on `if egress_baseline` before dividing, so a zero baseline never
+reached a division. A *negative* baseline did slip through and produced a negative ratio with a
+straight face, which is worse than a crash in a forensic tool. It is now refused.
+
+The fifth was a reporting complaint, not a grading one: the write burst and the recovery deletion were
+already deduplicated into one file source, but the explanation for that was printed among the
+observations. It reads as a limitation now, which is where a statement about evidence quality belongs.
+
+The review also asked that the correlation rule carry its own caveat. It does: source labels do not
+establish statistical independence, and two sensors can share collection infrastructure. Correlation
+by host and time additionally assumes synchronised clocks, which this repository does not verify.

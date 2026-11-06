@@ -52,14 +52,19 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
         observations.append(f"recovery configuration changed: {weakened[0].get('key')} {weakened[0].get('op')}")
         sources.add("config")
 
+    egress_note = None
     if egress_baseline is not None:
         out = sum(int(e.get("bytes", 0)) for e in events if e.get("kind") == "network")
-        if egress_baseline and out > egress_baseline * 3:
-            observations.append(f"egress {out / egress_baseline:.1f}x baseline before or during the burst")
-            sources.add("network")
+        if egress_baseline > 0:
+            if out > egress_baseline * 3:
+                observations.append(f"egress {out / egress_baseline:.1f}x baseline before or during the burst")
+                sources.add("network")
+        else:
+            egress_note = f"egress comparison skipped: baseline {egress_baseline} is not positive"
 
+    shared_note = None
     if (bursts or rename_bursts) and (interference or weakened):
-        observations.append("the burst and the recovery interference share a source, so they count once")
+        shared_note = "write burst and recovery interference are both file metadata, so they count once"
 
     limits = [
         "a bulk legitimate rewrite looks like this: a migration, an archive job, a sync client",
@@ -67,6 +72,10 @@ def analyse(events: list[dict], egress_baseline: int | None = None) -> dict:
         "if data left before encryption, restoring the files does not resolve the exposure",
         "recovery interference is read from delete and config events, not from a volume that quietly stops",
     ]
+    if shared_note:
+        limits.append(shared_note)
+    if egress_note:
+        limits.append(egress_note)
     return finding(BEHAVIOUR, observations, limits,
                    ["T1486 data encrypted for impact", "T1490 inhibit system recovery"] if observations else [],
                    sources)

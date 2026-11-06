@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-11-05 - external review pass
+
+Five defects were reported against THREAT-LENS. Three were real, one was already guarded and one was
+a reporting problem rather than a grading one.
+
+- **Correlation counted labels as evidence.** Two behaviours graded `suspected` through the same
+  telemetry source reached `corroborated`, so naming a detector twice bought a rung. `correlate()`
+  now unions the `sources` sets and grades on that union, and reports `independent_sources`.
+- **Software versions compared as strings.** `"4.10" < "4.9"` is true lexically, so an upgrade read
+  as a downgrade. `numeric_version()` parses dotted numerics into tuples; anything unparseable is
+  recorded as unavailable evidence instead of guessed at.
+- **One malformed event crashed the run.** `investigate()` kept malformed events whenever anything
+  looked wrong, so a missing host became a `KeyError` inside an engine. Validation is now per event,
+  with `events_examined` and `events_rejected` in the report.
+- **Already guarded:** the egress comparison short-circuits on a falsy baseline, so zero never
+  divided. A *negative* baseline did produce a nonsense ratio, and is now refused with a stated
+  limitation.
+- **Reporting, not grading:** the burst and the recovery deletion were already one source; the note
+  explaining that now sits in `limitations` rather than being printed as an observation.
+
+Ten regression tests, one per reported failure mode plus the two that must keep working.
+
 ## 2026-11-05 - THREAT-LENS 0.3: schema, engines, evidence record
 
 - **New: `lab/telemetry.py`.** Seven event kinds with per-kind required fields; `check()` raises on

@@ -20,25 +20,32 @@ ALTERNATIVES = {
 
 
 def correlate(findings: list[dict]) -> dict:
+    """Independence is counted in telemetry sources, never in detector labels.
+
+    Labelling two findings differently does not make them independent. A worm seen only through
+    network telemetry and a burst seen only through egress are one source between them, and one
+    source is one rung. Two sources still do not prove statistical independence: two sensors can
+    share collection infrastructure.
+    """
     live = [f for f in findings if f["grade"] != "unknown"]
     channels = {f["behaviour"] for f in live}
-    grades = [f["grade"] for f in live]
-    if any(g == "corroborated" for g in grades) or len(channels) >= 2:
-        grade = "corroborated"
-    elif grades:
-        grade = "suspected"
-    else:
-        grade = "unknown"
+    independent_sources = {src for f in live for src in f.get("sources", [])}
+    grade = grade_for(len(independent_sources))
+
     limits = [l for f in live for l in f["limitations"]]
-    limits.append("correlation here is by host and time only: no shared clock discipline is enforced")
+    limits.append("source labels do not establish statistical independence; two may share collection")
+    limits.append("correlation by host and time requires validated clock synchronisation")
+
     return {
         "grade": grade,
         "channels": sorted(channels),
-        "independent_observations": sum(f["independent_channels"] for f in live),
+        "independent_observations": len(independent_sources),
+        "independent_sources": sorted(independent_sources),
         "techniques": sorted({t for f in live for t in f["techniques"]}),
         "affected_hosts": sorted({h for f in live for h in f.get("hosts", [])}),
         "observed": [o for f in live for o in f["observed"]],
         "alternatives": {f["behaviour"]: ALTERNATIVES.get(f["behaviour"], []) for f in live},
         "limitations": limits,
         "findings": findings,
+        "chain": [{"behaviour": f["behaviour"], "first": f["observed"][0]} for f in live],
     }

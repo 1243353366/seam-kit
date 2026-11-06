@@ -32,9 +32,11 @@ def investigate(events: list[dict], *, baseline: dict | None = None,
     schema_problems = telemetry.problems(events)
     if schema_problems and strict:
         telemetry.check(events)
-    clean = [telemetry.normalise(e) for e in events if not schema_problems] or [
-        telemetry.normalise(e) for e in events if isinstance(e, dict) and e.get("kind") in telemetry.KINDS
-    ]
+
+    # Validate per event. The old fallback kept malformed events whenever anything looked wrong, so
+    # one bad row turned into a KeyError inside an engine instead of a controlled result.
+    clean = [telemetry.normalise(e) for e in events
+             if isinstance(e, dict) and not telemetry.problems([e])]
 
     findings = [_worm.analyse(clean), _trojan.analyse(clean, known_destinations),
                 _ransomware.analyse(clean, egress_baseline)]
@@ -45,6 +47,8 @@ def investigate(events: list[dict], *, baseline: dict | None = None,
     report.update({
         "signature_free": True,
         "schema_problems": schema_problems,
+        "events_examined": len(clean),
+        "events_rejected": len(events) - len(clean),
         "inputs_used": sorted({e.get("kind") for e in clean if e.get("kind")}),
         "inputs_not_used": list(SIGNATURE_FREE_INPUTS),
         "confirmed": False,
