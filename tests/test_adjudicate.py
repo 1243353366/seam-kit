@@ -15,8 +15,11 @@ class GradeLadderTests(unittest.TestCase):
         claim = adj.media_claim(signals(noise_ratio="suspect", chroma_step="clean"))
         self.assertEqual(claim["grade"], "suspected")
 
-    def test_two_agreeing_signals_are_corroborated(self):
-        claim = adj.media_claim(signals(noise_ratio="suspect", seam_edge="suspect"))
+    def test_two_agreeing_signals_with_measured_thresholds_are_corroborated(self):
+        claim = adj.media_claim(
+            signals(noise_ratio="suspect", seam_edge="suspect"),
+            calibration={"operating_points": {"noise_ratio": 0.42, "seam_edge": 0.18}},
+        )
         self.assertEqual(claim["grade"], "corroborated")
 
     def test_no_signal_is_unknown_not_innocent(self):
@@ -24,11 +27,28 @@ class GradeLadderTests(unittest.TestCase):
         self.assertEqual(claim["grade"], "unknown")
         self.assertIn("no provenance", " ".join(claim["limitations"]))
 
-    def test_provenance_is_what_confirms(self):
+    def test_provenance_cannot_promote_a_grade(self):
+        """`insertion_evidence` is a field somebody asserted; this layer cannot check it."""
         claim = adj.media_claim(
             signals(noise_ratio="suspect"), provenance={"chain_intact": True, "insertion_evidence": True}
         )
-        self.assertEqual(claim["grade"], "confirmed")
+        self.assertNotEqual(claim["grade"], "confirmed")
+        self.assertEqual(claim["grade"], "suspected")
+        self.assertIn("unverified here", " ".join(claim["basis"]))
+
+    def test_nothing_here_is_ever_confirmed(self):
+        """Confirmation is an examiner determination, not something a count of signals reaches."""
+        claim = adj.media_claim(
+            signals(noise_ratio="suspect", seam_edge="suspect", chroma_step="suspect"),
+            provenance={"chain_intact": True, "insertion_evidence": True},
+            calibration={"operating_points": {"noise_ratio": 0.42}},
+        )
+        self.assertEqual(claim["grade"], "corroborated")
+
+    def test_agreement_without_calibration_is_capped_at_suspected(self):
+        claim = adj.media_claim(signals(noise_ratio="suspect", seam_edge="suspect"))
+        self.assertEqual(claim["grade"], "suspected")
+        self.assertIn("capped by missing calibration", " ".join(claim["limitations"]))
 
     def test_a_broken_chain_is_a_stated_limitation_not_a_silent_pass(self):
         claim = adj.media_claim(
@@ -46,18 +66,21 @@ class GradeLadderTests(unittest.TestCase):
 class EventClaimTests(unittest.TestCase):
     """The ceiling: media cannot prove an event did not happen."""
 
-    def test_confirmed_media_alone_still_cannot_claim_the_event_was_false(self):
+    def test_the_best_media_still_cannot_claim_the_event_was_false(self):
         media = adj.media_claim(
             signals(noise_ratio="suspect", seam_edge="suspect"),
-            provenance={"chain_intact": True, "insertion_evidence": True},
+            calibration={"operating_points": {"noise_ratio": 0.42}},
         )
-        self.assertEqual(media["grade"], "confirmed")
+        self.assertEqual(media["grade"], "corroborated")
         claim = adj.event_claim(media)
         self.assertEqual(claim["grade"], "unknown")
         self.assertIn("media alone", claim["reason"])
 
-    def test_an_independent_source_lifts_it_one_rung(self):
-        media = adj.media_claim(signals(noise_ratio="suspect", seam_edge="suspect"))
+    def test_an_independent_source_stands_on_its_own(self):
+        """A custody log does not need the footage's permission, and a weak media grade cannot
+        drag it down: the record is the stronger evidence and the footage is the thing attacked."""
+        media = adj.media_claim(signals(noise_ratio="clean", seam_edge="clean"))
+        self.assertEqual(media["grade"], "unknown")
         claim = adj.event_claim(media, [{"independent": True, "source": "venue log"}])
         self.assertEqual(claim["grade"], "corroborated")
 

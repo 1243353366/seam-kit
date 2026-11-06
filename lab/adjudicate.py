@@ -18,7 +18,10 @@ from .signals import all_signals, oriented
 
 GRADES = ("confirmed", "corroborated", "suspected", "unknown")
 
-#: Independent media signals that must agree before a grade is allowed past "suspected".
+#: Media signals that must agree before a grade is allowed past "suspected". This is a stopgap and
+#: it is labelled as one: signals measured on the same pixels are not established to be independent,
+#: so counting them is not evidence fusion. A grade above "suspected" also requires measured
+#: operating points; uncalibrated defaults cannot carry it.
 AGREEMENT_FOR_CORROBORATED = 2
 
 
@@ -44,52 +47,74 @@ def media_claim(
     clean = sorted(n for n, s in signals.items() if s.get("verdict") == "clean")
     # Provenance only counts while its chain verifies. A broken chain is a chain you cannot
     # read, and reading it anyway is how a fabrication gets marked confirmed.
+    # Provenance still cannot carry a grade. `insertion_evidence` is a field someone asserted; this
+    # layer cannot check it, and a claim it cannot check must not promote anything. It is reported
+    # as a basis item and nothing more.
     insertion = bool(
         provenance and provenance.get("insertion_evidence") and provenance.get("chain_intact")
     )
+    calibrated = bool(calibration and calibration.get("operating_points"))
 
-    if insertion and agree:
-        grade = "confirmed"
-    elif len(agree) >= AGREEMENT_FOR_CORROBORATED:
+    if len(agree) >= AGREEMENT_FOR_CORROBORATED:
         grade = "corroborated"
     elif agree:
         grade = "suspected"
     else:
         grade = "unknown"
 
+    if grade == "corroborated" and not calibrated:
+        # Thresholds measured on nothing are a guess with a decimal point.
+        grade = "suspected"
+
     basis = list(agree)
     if insertion:
-        basis.append("provenance: insertion point identified in the custody record")
+        basis.append("provenance: an insertion point is asserted in the custody record, unverified here")
+    limitations = _limitations(signals, provenance, calibration)
+    if grade == "suspected" and len(agree) >= AGREEMENT_FOR_CORROBORATED:
+        limitations.append("agreement was capped by missing calibration")
+
     return {
         "claim": "media_synthetic",
         "grade": grade,
         "signals_agreeing": agree,
         "signals_clean": clean,
+        "calibrated": calibrated,
         "basis": basis,
-        "limitations": _limitations(signals, provenance, calibration),
+        "limitations": limitations,
     }
 
 
+def calibrated_hint(media: dict) -> bool:
+    """True when the media block records that measured operating points were available."""
+    return bool(media.get("calibrated"))
+
+
 def event_claim(media: dict, independent_corroboration: list[dict] | None = None) -> dict:
-    """The claim media cannot make on its own, and the grade that admits it."""
+    """The claim media cannot make on its own, and the grade that admits it.
+
+    An independent record does not need the footage's permission. Gating this behind the media
+    grade, as this function used to, made a custody log less credible whenever the pixels were
+    ambiguous, which is backwards: the record is the stronger evidence and the footage is the
+    thing under attack.
+    """
     corroboration = [c for c in (independent_corroboration or []) if c.get("independent")]
-    if corroboration and media["grade"] in ("confirmed", "corroborated"):
+    if corroboration:
         grade = "corroborated"
-        why = "the media indicates synthesis and an independent source contradicts the event"
-    elif corroboration:
-        grade = "suspected"
-        why = "an independent source contradicts the event, but the media evidence is weak"
+        why = "an independent non-media source contradicts the event"
     else:
         grade = "unknown"
         why = "media alone cannot establish that an event did not happen"
     limits = list(media["limitations"])
     if not corroboration:
         limits.append("no independent non-media source contradicts the event")
+    if not calibrated_hint(media):
+        limits.append("media grade was capped by missing calibration")
     return {
         "claim": "event_false",
         "grade": grade,
         "reason": why,
         "media_grade": media["grade"],
+        "calibrated": calibrated_hint(media),
         "limitations": limits,
     }
 

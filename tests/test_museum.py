@@ -25,9 +25,11 @@ class MuseumCaseTests(unittest.TestCase):
         self.assertEqual(self.claims["record"]["grade"], "confirmed")
         self.assertGreaterEqual(self.report["evidence"]["rows_lost"], 1)
 
-    def test_media_is_corroborated_at_most_because_the_chain_is_broken(self):
-        """Two signals agree, but a broken chain blocks `confirmed`. That ceiling is the point."""
-        self.assertEqual(self.claims["media"]["grade"], "corroborated")
+    def test_media_stays_at_suspected_without_measured_thresholds(self):
+        """Two signals agree and the grade still does not move: uncalibrated defaults are not
+        operating points, and the case has no measured ones to supply."""
+        self.assertEqual(self.claims["media"]["grade"], "suspected")
+        self.assertIn("capped by missing calibration", " ".join(self.claims["media"]["limitations"]))
 
     def test_an_independent_record_is_what_lifts_the_event_claim(self):
         self.assertEqual(self.claims["event"]["grade"], "corroborated")

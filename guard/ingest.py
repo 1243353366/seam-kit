@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import os
+import os
 import re
 import sys
 from collections import Counter, defaultdict
@@ -26,6 +27,7 @@ SEED_MIN_SIM = 0.35
 #: One record is expected to be small. A line beyond this is refused rather than parsed:
 #: a gigabyte of JSON is either a mangled export or a test of your parser's memory ceiling.
 MAX_LINE_CHARS = 1 << 20
+MAX_RECORDS = 200_000
 
 
 def canon(rec: dict) -> bytes:
@@ -79,7 +81,7 @@ def sign(payload: dict, material: bytes) -> str:
 
 
 def canary(rid: str, material: bytes) -> str:
-    return "sc-" + hmac.new(material, f"canary:{rid}".encode(), hashlib.sha256).hexdigest()[:12]
+    return "sc-" + hmac.new(material, f"canary:{rid}".encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def _cosine(a: Counter, b: Counter) -> float:
@@ -100,6 +102,27 @@ def _load_seed(path: str | None) -> list[Counter]:
     return rows
 
 
+def _read_lines(path: str) -> list[str]:
+    """Read a JSONL file with the ceilings enforced *before* a line is kept.
+
+    The old version built the whole list first and checked sizes afterwards, so an oversized line
+    was already in memory by the time it was rejected. It also failed open: an over-long manifest
+    line could simply drop out of the checks. Both are fixed by refusing the file.
+    """
+    lines: list[str] = []
+    with open(path, encoding="utf-8") as fh:
+        for lineno, line in enumerate(fh, 1):
+            if len(line) > MAX_LINE_CHARS:
+                raise ValueError(f"{path}: line {lineno} exceeds {MAX_LINE_CHARS} characters")
+            line = line.strip()
+            if not line:
+                continue
+            if len(lines) >= MAX_RECORDS:
+                raise ValueError(f"{path}: more than {MAX_RECORDS} records")
+            lines.append(line)
+    return lines
+
+
 def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: str,
            seed_path: str | None = None, material: bytes | None = None) -> dict:
     material = material or key()  # noqa: F841 - proves the key exists before any work starts
@@ -108,7 +131,7 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
     buckets: dict[tuple[int, int], list[str]] = defaultdict(list)
 
     with open(incoming, encoding="utf-8") as fh:
-        lines = [line.strip() for line in fh if line.strip()]
+        lines = _read_lines(incoming)
 
     too_long = 0
     for line in lines:
@@ -120,7 +143,7 @@ def ingest(incoming: str, clean_path: str, quarantine_path: str, manifest_path: 
             too_long += 1
             continue
         rec = json.loads(line)
-        rid = sha256_hex(canon(rec))[:16]
+        rid = sha256_hex(canon(rec))[:32]
         if rid in records:
             continue
         rec["_id"] = rid
@@ -199,10 +222,14 @@ def write_manifest(manifest_path: str, entries: list[dict], material: bytes | No
 
     seal = {"__seal__": True, "count": len(signed), "head": signed[-1]["sig"] if signed else ""}
     seal["sig"] = sign({"__seal__": True, "count": seal["count"], "head": seal["head"]}, material)
-    with open(manifest_path, "w", encoding="utf-8") as fh:
+    tmp = f"{manifest_path}.part"
+    with open(tmp, "w", encoding="utf-8") as fh:
         for row in signed:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
         fh.write(json.dumps(seal, sort_keys=True) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, manifest_path)
     return {"count": len(signed), "head": seal["head"]}
 
 
@@ -214,7 +241,7 @@ def verify(manifest_path: str, material: bytes | None = None) -> tuple[bool, int
     """
     material = material or key()
     with open(manifest_path, encoding="utf-8") as fh:
-        lines = [line.strip() for line in fh if line.strip()]
+        lines = _read_lines(manifest_path)
 
     oversized = sum(1 for line in lines if len(line) > MAX_LINE_CHARS)
     lines = [line for line in lines if len(line) <= MAX_LINE_CHARS]

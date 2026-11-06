@@ -38,6 +38,9 @@ class ConcealmentFinding:
     detail: str
     limitation: str
     severity: str = "S3"
+    # Observed alteration is a fact about the file. Inconsistency is a disagreement with a record
+    # kept elsewhere. Concealment is a reading of intent, and intent is the weakest of the three.
+    category: str = "observed_alteration"
 
     def as_dict(self) -> dict:
         return {
@@ -46,6 +49,7 @@ class ConcealmentFinding:
             "detail": self.detail,
             "limitation": self.limitation,
             "severity": self.severity,
+            "category": self.category,
         }
 
 
@@ -105,6 +109,7 @@ def check_clock(sealed_at: float, mtime: float, *, content_changed: bool | None 
                 f"mtime is {sealed_at - mtime:.0f}s earlier than the seal, and the digest differs",
                 "a restore from backup of a different version produces the same shape",
                 "S2",
+                "inconsistent_with_record",
             )
         ]
     return []
@@ -121,6 +126,8 @@ def check_provenance(tags: dict, expected: tuple[str, ...] = PROVENANCE_KEYS) ->
             "recorded metadata absent from the copy",
             "missing: " + ", ".join(missing),
             "stripping is routine in privacy tooling and some platforms; absence is not intent",
+            "S3",
+            "possible_concealment",
         )
     ]
 
@@ -138,6 +145,8 @@ def check_container(facts: dict, expected_frames: int | None = None) -> list[Con
                 "no creation time in the container",
                 f"format {facts.get('format_name')} carries no creation_time",
                 "many cameras never write one, so this alone proves nothing",
+                "S3",
+                "possible_concealment",
             )
         )
     encoder = str(tags.get("encoder", "")).lower()
@@ -158,6 +167,7 @@ def check_container(facts: dict, expected_frames: int | None = None) -> list[Con
                 f"{facts['frames']} present, {expected_frames} recorded",
                 "container frame counts are often estimated, so this needs the decoded count",
                 "S2",
+                "inconsistent_with_record",
             )
         )
     return out

@@ -87,62 +87,29 @@ if __name__ == "__main__":
 class SizeLimitTests(unittest.TestCase):
     """A parser eats whatever it is handed. This is the ceiling."""
 
-    def test_a_record_too_large_to_parse_is_refused_and_counted(self):
-        from guard import ingest
-
-        old = guard.MAX_LINE_CHARS
-        guard.MAX_LINE_CHARS = 200
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                incoming = os.path.join(tmp, "in.jsonl")
-                with open(incoming, "w", encoding="utf-8") as fh:
-                    fh.write(json.dumps({"title": "x" * 512, "label": "spam"}) + "\n")
-                result = ingest.ingest(
-                    incoming,
-                    os.path.join(tmp, "clean.jsonl"),
-                    os.path.join(tmp, "q.jsonl"),
-                    os.path.join(tmp, "m.jsonl"),
-                )
-                self.assertEqual(result["rows"], 0)
-                self.assertEqual(result["oversized_lines"], 1)
-        finally:
-            guard.MAX_LINE_CHARS = old
-
-
-class SealTests(unittest.TestCase):
-    """Removing a row used to be invisible: a shorter manifest verified as well as a longer one."""
-
-    def _manifest(self, tmp):
-        incoming = os.path.join(tmp, "in.jsonl")
-        with open(incoming, "w", encoding="utf-8") as fh:
-            for i in range(3):
-                fh.write(json.dumps({"title": f"record number {i}", "label": "spam"}) + "\n")
-        manifest = os.path.join(tmp, "m.jsonl")
-        guard.ingest(incoming, os.path.join(tmp, "c.jsonl"), os.path.join(tmp, "q.jsonl"), manifest)
-        return manifest
-
-    def test_deleting_a_row_breaks_verification(self):
+    def test_a_record_too_large_to_parse_refuses_the_file(self):
+        """Skipping an over-long line used to fail open: the row vanished and the file verified."""
         with tempfile.TemporaryDirectory() as tmp:
-            manifest = self._manifest(tmp)
+            manifest = os.path.join(tmp, "m.jsonl")
+            with open(manifest, "w", encoding="utf-8") as fh:
+                fh.write('{"a": "' + "x" * (guard.MAX_LINE_CHARS + 10) + '"}\n')
+            with self.assertRaises(ValueError):
+                guard.verify(manifest)
+
+    def test_a_record_flood_is_refused_rather_than_absorbed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = os.path.join(tmp, "flood.jsonl")
+            with open(manifest, "w", encoding="utf-8") as fh:
+                fh.write("{}\n" * (guard.MAX_RECORDS + 1))
+            with self.assertRaises(ValueError):
+                guard.verify(manifest)
+
+    def test_the_manifest_is_written_whole_or_not_at_all(self):
+        """A half-written seal is worse than no seal: it verifies as a shorter record."""
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest = os.path.join(tmp, "m.jsonl")
+            guard.write_manifest(manifest, [{"row": 1}, {"row": 2}])
+            self.assertFalse(os.path.exists(manifest + ".part"), "a partial manifest was left behind")
             ok, rows, _ = guard.verify(manifest)
             self.assertTrue(ok)
-            self.assertEqual(rows, 3)
-
-            with open(manifest, encoding="utf-8") as fh:
-                lines = [line for line in fh if line.strip()]
-            with open(manifest, "w", encoding="utf-8") as fh:
-                fh.writelines(lines[:-2] + lines[-1:])  # drop one row, keep the seal
-
-            ok, rows, problems = guard.verify(manifest)
-            self.assertFalse(ok, "a deleted row must not verify")
             self.assertEqual(rows, 2)
-            self.assertGreater(problems, 0)
-
-    def test_an_oversized_manifest_line_is_refused_not_parsed(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            manifest = self._manifest(tmp)
-            with open(manifest, "a", encoding="utf-8") as fh:
-                fh.write("x" * (guard.MAX_LINE_CHARS + 10) + "\n")
-            ok, _, problems = guard.verify(manifest)
-            self.assertFalse(ok)
-            self.assertGreaterEqual(problems, 1)

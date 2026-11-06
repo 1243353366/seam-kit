@@ -16,14 +16,16 @@ permitted to write to that camera.
 
 | claim | grade | why |
 | --- | --- | --- |
-| media | corroborated | two temporal signals agree, and the custody chain is broken, which blocks `confirmed` |
-| event | corroborated | the footage indicates synthesis **and** an independent record contradicts the event |
+| media | suspected | two temporal signals agree, but the thresholds are uncalibrated, so the grade is capped |
+| event | corroborated | an independent record contradicts the event, on its own authority |
 | record | confirmed | the sealed manifest no longer verifies and is one row short |
 | concealment | corroborated | clock, provenance and container all show the shape of an attempt |
 | access | unknown | the credential authenticated; permission to write is absent and unattributed |
 
 Remove the custody log and the event claim drops to `unknown`, which is the ceiling from
-`adjudicate.py` doing its job in a case rather than a unit test.
+`adjudicate.py` doing its job in a case rather than a unit test. Note the direction: the record
+carries the claim, not the footage. An earlier version gated the record behind the media grade,
+which made a custody log less credible whenever the pixels were ambiguous.
 
 ## The four "what should still exist" questions
 
